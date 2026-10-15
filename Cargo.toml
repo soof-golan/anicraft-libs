@@ -12,6 +12,7 @@ repository = "https://github.com/soof-golan/anicraft-libs"
 [workspace.dependencies]
 # Internal crates (see ARCHITECTURE.md for what each one owns).
 anim-archive = { path = "crates/archive" }
+anim-audio = { path = "crates/audio" }
 anim-artwork = { path = "crates/artwork" }
 anim-core = { path = "crates/core" }
 anim-display = { path = "crates/display" }

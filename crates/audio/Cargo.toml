@@ -1,0 +1,28 @@
+[package]
+name = "anim-audio"
+description = "Audio for AniCraft and CharCraft: decode to f32 PCM, resample, mix, waveform peaks, playback and microphone actors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["device"]
+# Playback and microphone actors over cpal. Without it only the pure (decode / DSP / protocol) parts are built.
+device = ["dep:cpal"]
+
+[dependencies]
+anim-core = { workspace = true }
+crossbeam-channel = { workspace = true }
+cpal = { workspace = true, optional = true }
+symphonia = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+anim-archive = { workspace = true }
+proptest = { workspace = true }
+tempfile = { workspace = true }
