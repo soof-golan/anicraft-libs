@@ -77,6 +77,10 @@ impl Container {
         if meta.is_dir() {
             return Self::open_folder(path, limits);
         }
+        if !meta.is_file() {
+            // Pipes, devices and sockets: opening them could block forever.
+            return Err(ArchiveError::NotAnArchive(format!("{context} (neither a regular file nor a folder)")));
+        }
         if let Some(folder) = xfl_marker_folder(path, meta.len())? {
             return Self::open_folder(&folder, limits);
         }
@@ -84,7 +88,7 @@ impl Container {
         let len = meta.len();
         let mut reader = BufReader::new(file);
         let index = zip_index::build_index(&mut reader, len, &limits).map_err(|e| match e {
-            ArchiveError::Malformed(reason) => ArchiveError::NotAnArchive(format!("{context} ({reason})")),
+            ArchiveError::Malformed(reason) => ArchiveError::NotAnArchive(format!("{context} ({reason}{})", format_hint(path))),
             other => other,
         })?;
         Self::assemble(Source::File { path: path.to_path_buf(), len }, index, limits)
@@ -300,6 +304,26 @@ fn decode_text(name: &str, bytes: &[u8]) -> Result<String> {
     }
     let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     String::from_utf8(body.to_vec()).map_err(|_| ArchiveError::Text { name: name.to_owned(), reason: "invalid UTF-8" })
+}
+
+/// Recognises a few well-known non-zip formats from the file's first bytes, to make the error message useful.
+fn format_hint(path: &Path) -> &'static str {
+    let mut head = [0_u8; 8];
+    let read = File::open(path).and_then(|mut f| f.read_exact(&mut head));
+    if read.is_err() {
+        return "";
+    }
+    if head == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] {
+        "; this looks like a legacy binary document (an Animate/Flash CS5 or earlier .fla), which is not supported: save it as .fla (CS5+) or XFL"
+    } else if head.starts_with(b"%PDF") {
+        "; this looks like a PDF"
+    } else if head.starts_with(&[0x1F, 0x8B]) {
+        "; this looks like a gzip stream"
+    } else if head.starts_with(b"Rar!") || head.starts_with(b"7z\xBC\xAF") {
+        "; this looks like a RAR or 7-Zip archive, which is not supported"
+    } else {
+        ""
+    }
 }
 
 /// A small `*.xfl` file that is not a zip is XFL's marker ("PROXY-CS5"); the document is the folder around it.
