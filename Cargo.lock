@@ -364,6 +364,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "anim-timeline"
+version = "0.1.0"
+dependencies = [
+ "anim-core",
+ "anim-display",
+ "anim-morph",
+ "anim-render",
+ "anim-scene",
+ "anim-shape",
+ "anim-text",
+ "png",
+ "proptest",
+ "roxmltree 0.21.1",
+]
+
+[[package]]
 name = "anim-ui"
 version = "0.1.0"
 dependencies = [

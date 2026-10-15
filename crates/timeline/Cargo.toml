@@ -1,0 +1,25 @@
+[package]
+name = "anim-timeline"
+description = "Evaluates an AniCraft document at a frame into a display list: keyframes, tweens and easing, symbols, masks, onion skins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+anim-display = { workspace = true }
+anim-morph = { workspace = true }
+anim-scene = { workspace = true }
+anim-shape = { workspace = true }
+anim-text = { workspace = true }
+png = { workspace = true }
+roxmltree = { workspace = true }
+
+[dev-dependencies]
+anim-render = { workspace = true }
+proptest = { workspace = true }
