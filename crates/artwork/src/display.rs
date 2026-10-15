@@ -30,11 +30,7 @@ fn convert(node: &ArtNode, store: &mut ImageStore, depth: usize) -> Option<Node>
     if !node.visible || depth > MAX_DEPTH {
         return None;
     }
-    let mut group = Group {
-        color: ColorTransform::alpha(node.opacity.clamp(0.0, 1.0)),
-        blend: node.blend,
-        ..Group::default()
-    };
+    let mut group = Group { color: ColorTransform::alpha(node.opacity.clamp(0.0, 1.0)), blend: node.blend, ..Group::default() };
     match &node.kind {
         ArtKind::Group(children) => group.children = children_to_nodes(children, store, depth.saturating_add(1)),
         ArtKind::Raster { image, offset } => {
@@ -80,10 +76,7 @@ fn children_to_nodes(children: &[ArtNode], store: &mut ImageStore, depth: usize)
         let clip_nodes: Vec<Node> = convert(&shape, store, depth).into_iter().collect();
         let content: Vec<Node> = clipped.iter().filter_map(|c| convert(c, store, depth)).collect();
         out.push(Node::Group(Group {
-            children: vec![
-                base_node,
-                Node::Group(Group { mask: Some(clip_nodes), children: content, ..Group::default() }),
-            ],
+            children: vec![base_node, Node::Group(Group { mask: Some(clip_nodes), children: content, ..Group::default() })],
             ..Group::default()
         }));
     }
@@ -154,7 +147,7 @@ mod tests {
         let mut clipped = ArtNode::raster("clipped", px(2, 2, [0, 0, 255, 255]), Point::ORIGIN);
         clipped.clipping = true;
         let list = to_display(&tree(vec![base, clipped]), &mut ImageStore::new());
-        assert!(list.nodes.is_empty());
+        assert_eq!(list.nodes.len(), 0);
     }
 
     #[test]

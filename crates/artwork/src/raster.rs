@@ -11,13 +11,11 @@ pub fn mul255(c: u8, a: u8) -> u8 {
 
 /// Premultiplies straight RGBA8 in place.
 pub fn premultiply(rgba: &mut [u8]) {
-    for px in rgba.chunks_exact_mut(4) {
-        if let [r, g, b, a] = px {
-            if *a != 255 {
-                *r = mul255(*r, *a);
-                *g = mul255(*g, *a);
-                *b = mul255(*b, *a);
-            }
+    for [r, g, b, a] in rgba.as_chunks_mut::<4>().0 {
+        if *a != 255 {
+            *r = mul255(*r, *a);
+            *g = mul255(*g, *a);
+            *b = mul255(*b, *a);
         }
     }
 }
@@ -28,7 +26,7 @@ pub fn apply_mask(rgba: &mut [u8], width: usize, mask: impl Fn(usize, usize) -> 
         return;
     }
     for (y, row) in rgba.chunks_exact_mut(width.saturating_mul(4)).enumerate() {
-        for (x, px) in row.chunks_exact_mut(4).enumerate() {
+        for (x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let m = mask(x, y);
             if m == 255 {
                 continue;
@@ -85,9 +83,10 @@ pub fn resample(src: &[u8], width: u32, height: u32, xf: Affine, max_pixels: u64
             let mut px = [0_u8; 4];
             for (i, slot) in px.iter_mut().enumerate() {
                 let g = |c: &[f32; 4]| c.get(i).copied().unwrap_or(0.0);
-                let top = g(&c00) * (1.0 - tx) + g(&c10) * tx;
-                let bottom = g(&c01) * (1.0 - tx) + g(&c11) * tx;
-                *slot = num::unit_f32_to_u8(top * (1.0 - ty) + bottom * ty);
+                let lerp = |a: f32, b: f32, t: f32| (b - a).mul_add(t, a);
+                let top = lerp(g(&c00), g(&c10), tx);
+                let bottom = lerp(g(&c01), g(&c11), tx);
+                *slot = num::unit_f32_to_u8(lerp(top, bottom, ty));
             }
             out.extend_from_slice(&px);
         }

@@ -15,6 +15,9 @@
 //! Every reader treats its input as hostile: [`Limits`] bound input size, nesting depth, node count and decoded
 //! pixels, and nothing panics.
 
+// Tests build pixels and expected values with plain arithmetic; the no-overflow rule is for shipped code.
+#![cfg_attr(test, allow(clippy::arithmetic_side_effects))]
+
 mod ai;
 mod display;
 mod psd;
@@ -45,13 +48,7 @@ pub struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Self {
-            max_input_bytes: 1 << 30,
-            max_depth: 64,
-            max_nodes: 250_000,
-            max_layer_pixels: 100_000_000,
-            max_total_pixels: 400_000_000,
-        }
+        Self { max_input_bytes: 1 << 30, max_depth: 64, max_nodes: 250_000, max_layer_pixels: 100_000_000, max_total_pixels: 400_000_000 }
     }
 }
 

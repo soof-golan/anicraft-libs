@@ -114,9 +114,7 @@ impl ArtNode {
                     stack.extend(children.iter());
                     None
                 }
-                ArtKind::Raster { image, offset } => {
-                    Some(Rect::new(offset.x, offset.y, offset.x + f64::from(image.width), offset.y + f64::from(image.height)))
-                }
+                ArtKind::Raster { image, offset } => Some(Rect::new(offset.x, offset.y, offset.x + f64::from(image.width), offset.y + f64::from(image.height))),
                 ArtKind::Vector { bounds, nodes } => (!nodes.is_empty()).then_some(*bounds),
             };
             if let Some(r) = own.filter(|r| r.width() > 0.0 && r.height() > 0.0) {

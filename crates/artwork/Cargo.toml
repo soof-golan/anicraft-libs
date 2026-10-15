@@ -26,5 +26,7 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+anim-render = { workspace = true }
+png = { workspace = true }
 photocraft-psd = { workspace = true, features = ["testgen"] }
 proptest = { workspace = true }

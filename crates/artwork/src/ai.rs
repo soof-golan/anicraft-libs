@@ -59,8 +59,12 @@ fn load(bytes: &[u8]) -> Result<(Document, Vec<String>), String> {
     if is_ai && let Some(private) = vectorcraft_pdf::illustrator_data(bytes, None) {
         // The editor's own copy of the art has the layer, sublayer and group hierarchy. `trust`: use it even where
         // it draws a little differently from the PDF part, because the structure is what we are after.
-        let (layered, notes, _read) = vectorcraft_eps::layered_ai(&private, doc, warnings, true, true, report.user_unit);
+        let (layered, notes, read) = vectorcraft_eps::layered_ai(&private, doc, warnings, true, true, report.user_unit);
         warnings = notes;
+        if read {
+            // The layers hold the art the PDF part leaves out, so these notes no longer apply.
+            warnings.retain(|w| w != vectorcraft_pdf::OFF_ARTBOARD_NOTE && w != vectorcraft_pdf::PAST_PAGE_NOTE);
+        }
         return Ok((layered, warnings));
     }
     Ok((doc, warnings))
@@ -130,11 +134,11 @@ impl Ctx<'_> {
                 self.note("envelope distortions are drawn undistorted");
                 self.group(&name, content, false, depth)?
             }
-            NodeKind::Path { path, rule, .. } => self.vector(node, &name, path.to_bezpath(), *rule),
+            NodeKind::Path { path, rule, .. } => self.vector(node, &name, &path.to_bezpath(), *rule),
             NodeKind::Compound { children, rule } => {
                 let mut combined = BezPath::new();
                 collect_paths(children, &mut combined, 0);
-                self.vector(node, &name, combined, *rule)
+                self.vector(node, &name, &combined, *rule)
             }
             NodeKind::Image(image) => self.image(&name, image),
             NodeKind::Text(_) => {
@@ -159,13 +163,7 @@ impl Ctx<'_> {
         Ok(Some(art))
     }
 
-    fn group(
-        &mut self,
-        name: &str,
-        children: &[impl AsRef<vectorcraft_doc::Node>],
-        clip: bool,
-        depth: usize,
-    ) -> Result<ArtNode, ArtworkError> {
+    fn group(&mut self, name: &str, children: &[impl AsRef<vectorcraft_doc::Node>], clip: bool, depth: usize) -> Result<ArtNode, ArtworkError> {
         let mut kids = Vec::new();
         let mut mask = None;
         for (i, child) in children.iter().enumerate() {
@@ -208,7 +206,7 @@ impl Ctx<'_> {
     }
 
     /// A path with its appearance: fills and strokes bottom to top.
-    fn vector(&mut self, node: &vectorcraft_doc::Node, name: &str, path: BezPath, rule: vectorcraft_geom::FillRule) -> ArtNode {
+    fn vector(&mut self, node: &vectorcraft_doc::Node, name: &str, path: &BezPath, rule: vectorcraft_geom::FillRule) -> ArtNode {
         let doc_bounds = path.bounding_box();
         let bounds = self.shift.transform_rect_bbox(doc_bounds);
         let rule = map_rule(rule);
@@ -274,12 +272,8 @@ impl Ctx<'_> {
     }
 
     fn gradient(&mut self, paint: &GradientPaint, bounds: Rect, alpha: f32) -> Paint {
-        let stops: Vec<GradientStop> = paint
-            .gradient
-            .expanded_stops()
-            .into_iter()
-            .map(|(offset, color, opacity)| GradientStop { offset, color: rgba(&color, opacity * alpha) })
-            .collect();
+        let stops: Vec<GradientStop> =
+            paint.gradient.expanded_stops().into_iter().map(|(offset, color, opacity)| GradientStop { offset, color: rgba(&color, opacity * alpha) }).collect();
         if paint.gradient.kind == GradientKind::Freeform {
             self.note("freeform gradients are drawn as a flat colour");
             return Paint::Solid(stops.first().map_or(Rgba8::BLACK, |s| s.color));
@@ -319,7 +313,8 @@ impl Ctx<'_> {
             return empty();
         }
         // The image's own pixel size can differ from what the object records; trust the data.
-        let xf = self.shift * object.xf * Affine::scale_non_uniform(f64::from(object.width) / f64::from(w.max(1)), f64::from(object.height) / f64::from(h.max(1)));
+        let xf =
+            self.shift * object.xf * Affine::scale_non_uniform(f64::from(object.width) / f64::from(w.max(1)), f64::from(object.height) / f64::from(h.max(1)));
         let Some((pixels, offset)) = resample(decoded.as_raw(), w, h, xf, budget) else {
             self.note("images that could not be placed were left out");
             return empty();

@@ -193,9 +193,7 @@ fn common(record: &LayerRecord, kind: ArtKind) -> ArtNode {
 const fn map_blend(mode: PsdBlend) -> BlendMode {
     match mode {
         PsdBlend::PassThrough => BlendMode::PassThrough,
-        PsdBlend::Normal | PsdBlend::Dissolve | PsdBlend::Unknown(_) | PsdBlend::PinLight | PsdBlend::HardMix | PsdBlend::Divide => {
-            BlendMode::Normal
-        }
+        PsdBlend::Normal | PsdBlend::Dissolve | PsdBlend::Unknown(_) | PsdBlend::PinLight | PsdBlend::HardMix | PsdBlend::Divide => BlendMode::Normal,
         PsdBlend::Darken | PsdBlend::DarkerColor => BlendMode::Darken,
         PsdBlend::Multiply | PsdBlend::LinearBurn => BlendMode::Multiply,
         PsdBlend::ColorBurn => BlendMode::ColorBurn,

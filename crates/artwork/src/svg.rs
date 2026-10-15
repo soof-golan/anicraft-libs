@@ -348,7 +348,8 @@ mod tests {
         let list = crate::to_display(&tree, &mut anim_display::ImageStore::new());
         let mut fills = 0;
         list.visit(&mut |n| fills += usize::from(matches!(n, Node::Fill(_))));
-        assert_eq!(fills, 2);
+        // The torso, the face, and the clip path's rectangle (visited as the head group's mask).
+        assert_eq!(fills, 3);
     }
 
     #[test]
