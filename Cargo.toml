@@ -17,6 +17,7 @@ anim-core = { path = "crates/core" }
 anim-display = { path = "crates/display" }
 anim-morph = { path = "crates/morph" }
 anim-render = { path = "crates/render" }
+anim-rig = { path = "crates/rig" }
 anim-scene = { path = "crates/scene" }
 anim-session = { path = "crates/session" }
 anim-shape = { path = "crates/shape" }
@@ -42,6 +43,7 @@ usvg = { version = "0.48", default-features = false, features = ["text", "svgz",
 
 # External crates (versions match the Craft apps' lockfiles where they overlap).
 kurbo = { version = "0.13", features = ["serde"] }
+spade = "2.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { version = "1", features = ["alloc"] }

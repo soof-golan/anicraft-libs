@@ -1,0 +1,21 @@
+[package]
+name = "anim-rig"
+description = "Deformation for puppets and asset warp: constrained Delaunay meshing, ARAP, bone chains with IK, damped-spring dangles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+serde = { workspace = true }
+spade = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
