@@ -27,6 +27,8 @@ const MAX_PASSES: u8 = 8;
 const MAX_EXTENT: f64 = 2048.0;
 /// Largest padding a group's filters may add on any side, in device pixels.
 const MAX_REACH: i32 = 2048;
+/// Layers with more pixels than this are not blurred or shadowed: the float planes cost 12 bytes per pixel.
+pub const MAX_FILTER_PIXELS: usize = 64_000_000;
 
 /// How far (device pixels) the filters can spread a group's pixels beyond its content bounds.
 pub fn total_reach(filters: &[Filter], matrix: Affine) -> i32 {
@@ -53,8 +55,12 @@ fn reach(filter: &Filter, matrix: Affine) -> i32 {
     }
 }
 
-/// Applies one filter to the layer's pixels in place.
-pub fn apply(layer: &mut Layer, filter: &Filter, matrix: Affine) {
+/// Applies one filter to the layer's pixels in place. Returns false, leaving the layer as it was, when the layer
+/// is too big to filter within the memory budget ([`MAX_FILTER_PIXELS`]); colour matrices always run.
+pub fn apply(layer: &mut Layer, filter: &Filter, matrix: Affine) -> bool {
+    if !within_budget(layer.rect.area(), filter) {
+        return false;
+    }
     match filter {
         Filter::Blur { x, y, quality } => {
             let (wx, wy) = blur_widths(*x, *y, matrix);
@@ -73,6 +79,12 @@ pub fn apply(layer: &mut Layer, filter: &Filter, matrix: Affine) {
         }
         Filter::ColorMatrix(coefficients) => color_matrix(layer, coefficients),
     }
+    true
+}
+
+/// Whether a layer of `area` pixels may be run through `filter`.
+const fn within_budget(area: usize, filter: &Filter) -> bool {
+    area <= MAX_FILTER_PIXELS || matches!(filter, Filter::ColorMatrix(_))
 }
 
 fn passes(quality: u8) -> u8 {
@@ -204,26 +216,29 @@ fn dimensions(layer: &Layer) -> (usize, usize) {
     (anim_core::num::u32_to_usize(layer.pm.width()), anim_core::num::u32_to_usize(layer.pm.height()))
 }
 
-/// The layer as premultiplied unit-range floats, four per pixel.
-fn rgba_plane(layer: &Layer) -> Vec<f32> {
-    layer.pm.data().iter().map(|byte| unit(*byte)).collect()
+/// One channel of the layer as unit-range floats.
+fn channel_plane(layer: &Layer, channel: usize) -> Vec<f32> {
+    layer.pm.data().iter().skip(channel).step_by(4).map(|byte| unit(*byte)).collect()
 }
 
-/// The layer's alpha channel as unit-range floats.
-fn alpha_plane(layer: &Layer) -> Vec<f32> {
-    layer.pm.data().as_chunks::<4>().0.iter().map(|px| unit(px[3])).collect()
-}
-
+/// Blurs the four channels one after another (12 bytes per pixel of scratch instead of 48). Alpha goes first so
+/// each colour channel can be clamped to the final alpha, which keeps the premultiplied invariant.
 fn blur_rgba(layer: &mut Layer, wx: f64, wy: f64, passes: u8) {
     let (width, height) = dimensions(layer);
     let (horizontal, vertical) = (Axis { width: wx, shift: 0.0 }, Axis { width: wy, shift: 0.0 });
     if horizontal.is_noop() && vertical.is_noop() {
         return;
     }
-    let mut plane = rgba_plane(layer);
-    blur::<4>(&mut plane, width, height, horizontal, vertical, passes);
-    for (px, value) in layer.pm.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(plane.as_chunks::<4>().0) {
-        store(px, value[0], value[1], value[2], value[3]);
+    for channel in [3, 0, 1, 2] {
+        let mut plane = channel_plane(layer, channel);
+        blur::<1>(&mut plane, width, height, horizontal, vertical, passes);
+        for (px, value) in layer.pm.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(&plane) {
+            let blurred = anim_core::num::unit_f32_to_u8(*value);
+            let alpha = px[3];
+            if let Some(slot) = px.get_mut(channel) {
+                *slot = if channel == 3 { blurred } else { blurred.min(alpha) };
+            }
+        }
     }
 }
 
@@ -239,7 +254,7 @@ struct Look {
 
 fn shadow(layer: &mut Layer, look: &Look, horizontal: Axis, vertical: Axis) {
     let (width, height) = dimensions(layer);
-    let mut plane = alpha_plane(layer);
+    let mut plane = channel_plane(layer, 3);
     blur::<1>(&mut plane, width, height, horizontal, vertical, SHADOW_PASSES);
     let strength = f64_to_f32(look.strength.clamp(0.0, 255.0));
     let rgb = [unit(look.color.r), unit(look.color.g), unit(look.color.b)];
@@ -470,5 +485,23 @@ mod tests {
         assert!(small >= 15 && big >= 4 * 15 - 4, "{small} {big}");
         assert_eq!(total_reach(&[Filter::ColorMatrix([0.0; 20])], Affine::IDENTITY), 0);
         assert!(total_reach(&[Filter::Blur { x: f64::NAN, y: 1e300, quality: 255 }], Affine::IDENTITY) <= MAX_REACH);
+    }
+
+    #[test]
+    fn oversized_layers_skip_blurs_but_not_colour_matrices() {
+        let blur = Filter::Blur { x: 4.0, y: 4.0, quality: 1 };
+        assert!(within_budget(MAX_FILTER_PIXELS, &blur));
+        assert!(!within_budget(MAX_FILTER_PIXELS + 1, &blur));
+        assert!(within_budget(usize::MAX, &Filter::ColorMatrix([0.0; 20])));
+    }
+
+    #[test]
+    fn rgba_blur_keeps_pixels_premultiplied() {
+        let mut pool = Pool::default();
+        let mut layer = layer_with_box(&mut pool, 33, 12, 21, [200, 100, 50, 200]);
+        blur_rgba(&mut layer, 7.0, 3.0, 3);
+        assert!(layer.pm.data().as_chunks::<4>().0.iter().all(|px| px[0] <= px[3] && px[1] <= px[3] && px[2] <= px[3]));
+        let centre = layer.pm.pixel(16, 16).unwrap();
+        assert!(centre.alpha() > 150 && centre.red() > 120, "{centre:?}");
     }
 }

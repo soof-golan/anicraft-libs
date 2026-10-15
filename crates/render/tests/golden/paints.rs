@@ -309,7 +309,7 @@ fn unsmoothed_bitmaps_stay_pixel_exact_when_minified() {
     scene.add(bitmap_node(id, Affine::scale(0.5), false));
     let img = scene.render();
     // Nearest sampling: each output pixel is one source pixel, never an average.
-    assert!(count(&img, |px| px[0] != 0 && px[0] != 255) == 0);
+    assert_eq!(count(&img, |px| px[0] != 0 && px[0] != 255), 0);
 }
 
 #[test]

@@ -63,7 +63,9 @@ pub fn draw(cx: &mut Ctx<'_>, layer: &mut Layer, group: &Group, matrix: Affine, 
         }
     }
     for filter in &group.filters {
-        filters::apply(&mut offscreen, filter, inner);
+        if !filters::apply(&mut offscreen, filter, inner) {
+            bump(&mut cx.stats.degraded_groups);
+        }
     }
     composite::apply_color_transform(&mut offscreen, &group.color);
     composite::composite(layer, &offscreen, Composite::of(group.blend));
