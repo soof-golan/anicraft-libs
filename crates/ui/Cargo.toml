@@ -1,0 +1,25 @@
+[package]
+name = "anim-ui"
+description = "Shared egui widgets for AniCraft and CharCraft: stage view, timeline, layers, property grid, library, transport, toolbar, docking and theme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+craft-ui = { workspace = true }
+egui = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# Visual reordering of right-to-left runs: egui's text shaper lays glyphs out in logical order.
+unicode-bidi = "0.3"
+
+[dev-dependencies]
+egui_kittest = "0.36"
+proptest = { workspace = true }

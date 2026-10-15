@@ -24,6 +24,7 @@ anim-scene = { path = "crates/scene" }
 anim-session = { path = "crates/session" }
 anim-shape = { path = "crates/shape" }
 anim-text = { path = "crates/text" }
+anim-ui = { path = "crates/ui" }
 
 # Craft crates, pinned by rev like the Craft apps do.
 filmcraft-time = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
