@@ -7,7 +7,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Runs `f`, returning `None` if it panicked.
-pub(crate) fn guarded<T>(f: impl FnOnce() -> T) -> Option<T> {
+pub fn guarded<T>(f: impl FnOnce() -> T) -> Option<T> {
     catch_unwind(AssertUnwindSafe(f)).ok()
 }
 

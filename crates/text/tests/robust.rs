@@ -1,5 +1,7 @@
 //! Hostile input: arbitrary strings, numbers and offsets must never panic, and the answers must stay sane.
 
+#![expect(clippy::disallowed_types, reason = "the proptest macros and strategies are built on Arc")]
+
 mod common;
 
 use anim_core::Point;

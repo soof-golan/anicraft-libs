@@ -117,7 +117,7 @@ pub struct TextLayout {
 
 /// A paragraph's parley layout with the bookkeeping to translate between its coordinates and layout space.
 #[derive(Debug, Clone)]
-pub(crate) struct ParaLayout {
+pub struct ParaLayout {
     pub layout: Layout<Rgba8>,
     /// Plain-text offset of the paragraph's first character.
     pub start: usize,
@@ -167,7 +167,7 @@ impl ParaLayout {
 
     /// The line containing parley y coordinate `y`, or the nearest one.
     pub fn line_at_parley_y(&self, y: f32) -> usize {
-        nearest_line(self.extents.iter().copied().enumerate().map(|(i, e)| (i, e)), y)
+        nearest_line(self.extents.iter().copied().enumerate(), y)
     }
 
     /// The line whose (shifted) box contains local y coordinate `y`, or the nearest one.
@@ -285,7 +285,7 @@ impl TextLayout {
     pub fn caret_rect(&self, caret: Caret, width: f64) -> Option<Rect> {
         let para = self.para_for_offset(caret.offset)?;
         let bb = para.cursor(caret).geometry(&para.layout, f64_to_f32(width));
-        let line = para.line_at_parley_y(f64_to_f32((bb.y0 + bb.y1) * 0.5));
+        let line = para.line_at_parley_y(f64_to_f32(f64::midpoint(bb.y0, bb.y1)));
         Some(rect_of(para, bb.x0, bb.y0, bb.x1, bb.y1, line))
     }
 
@@ -330,8 +330,8 @@ impl TextLayout {
         let r = cluster.text_range();
         let before = Cursor::from_byte_index(&para.layout, r.start, ParleyAffinity::Downstream).geometry(&para.layout, 0.0);
         let after = Cursor::from_byte_index(&para.layout, r.end, ParleyAffinity::Upstream).geometry(&para.layout, 0.0);
-        let x = f64_to_f32((before.x0 + after.x0) * 0.5);
-        let y = f64_to_f32((before.y0 + before.y1) * 0.5);
+        let x = f64_to_f32(f64::midpoint(before.x0, after.x0));
+        let y = f64_to_f32(f64::midpoint(before.y0, before.y1));
         let word = Selection::word_from_point(&para.layout, x, y).text_range();
         para.global(word.start)..para.global(word.end)
     }

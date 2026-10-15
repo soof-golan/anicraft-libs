@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn samples_belong_to_their_script() {
         for script in Script::ALL {
-            assert!(!script.preferred_families().is_empty());
+            assert_ne!(script.preferred_families().len(), 0);
             for c in script.sample().chars() {
                 assert_eq!(Script::of(c), Some(script), "{c:?} of {script:?}");
             }
@@ -262,7 +262,7 @@ mod tests {
     fn scripts_in_keeps_first_appearance_order_and_limit() {
         assert_eq!(scripts_in("abc שלום سلام 中", 8), vec![Script::Hebrew, Script::Arabic, Script::Han]);
         assert_eq!(scripts_in("שلام中", 2).len(), 2);
-        assert!(scripts_in("plain", 8).is_empty());
+        assert_eq!(scripts_in("plain", 8), Vec::<Script>::new());
     }
 
     #[test]

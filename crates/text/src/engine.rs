@@ -169,7 +169,7 @@ impl TextEngine {
         }
         if max_width.is_none() && shaped.len() > 1 {
             for s in &mut shaped {
-                let width = available(s, container) * 1.0001 + 0.01;
+                let width = available(s, container).mul_add(1.0001, 0.01);
                 break_lines(s, Some(f64_to_f32(width)));
             }
         }
@@ -332,7 +332,7 @@ fn break_lines(s: &mut Shaped, width: Option<f32>) {
     }
 }
 
-fn finite(v: f64, default: f64) -> f64 {
+const fn finite(v: f64, default: f64) -> f64 {
     if v.is_finite() { v } else { default }
 }
 
@@ -388,7 +388,7 @@ mod tests {
     fn spacing_skips_cursive_text() {
         assert_eq!(spacing_ranges("ab", 3), vec![3..5]);
         assert_eq!(spacing_ranges("aبb", 0), vec![0..1, 3..4]);
-        assert!(spacing_ranges("بب", 0).is_empty());
+        assert_eq!(spacing_ranges("بب", 0), Vec::<Range<usize>>::new());
     }
 
     #[test]

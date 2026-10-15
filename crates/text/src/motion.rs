@@ -124,7 +124,11 @@ impl TextLayout {
         if !extend && !selection.is_collapsed() && matches!(motion, Motion::Left | Motion::Right) {
             let x = |c: Caret| self.caret_x(c).unwrap_or(0.0);
             let (a, b) = (selection.anchor, selection.focus);
-            let a_is_left = x(a) < x(b) || (x(a) == x(b) && a.offset <= b.offset);
+            let a_is_left = match x(a).total_cmp(&x(b)) {
+                std::cmp::Ordering::Less => true,
+                std::cmp::Ordering::Equal => a.offset <= b.offset,
+                std::cmp::Ordering::Greater => false,
+            };
             let (left, right) = if a_is_left { (a, b) } else { (b, a) };
             return Selection::collapsed(if motion == Motion::Left { left } else { right });
         }
@@ -135,10 +139,7 @@ impl TextLayout {
     /// `caret` with its offset clamped and snapped to a position parley can place a caret at.
     fn normalize(&self, caret: Caret) -> Caret {
         let caret = Caret { offset: self.caret_at(caret.offset).offset, affinity: caret.affinity };
-        match self.para_for_offset(caret.offset) {
-            Some(para) => para.caret(para.cursor(caret)),
-            None => caret,
-        }
+        self.para_for_offset(caret.offset).map_or(caret, |para| para.caret(para.cursor(caret)))
     }
 
     /// One visual step (a character, or a word) within the paragraph; at the paragraph's edge, into the neighbour.

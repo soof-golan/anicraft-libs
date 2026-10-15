@@ -40,8 +40,8 @@ fn hit_testing_finds_the_nearest_character_boundary() {
     // Closer to the left or the right half of a letter decides the side.
     let a = layout.caret_rect(layout.caret_at(1), 0.0).unwrap().x0;
     let b = layout.caret_rect(layout.caret_at(2), 0.0).unwrap().x0;
-    assert_eq!(layout.hit_test(Point::new(a + (b - a) * 0.25, y)), 1);
-    assert_eq!(layout.hit_test(Point::new(a + (b - a) * 0.75, y)), 2);
+    assert_eq!(layout.hit_test(Point::new((b - a).mul_add(0.25, a), y)), 1);
+    assert_eq!(layout.hit_test(Point::new((b - a).mul_add(0.75, a), y)), 2);
 }
 
 #[test]
@@ -62,8 +62,11 @@ fn hit_testing_in_mixed_text_lands_on_the_nearest_caret_position() {
     let Some(mut engine) = engine_for(&[Script::Hebrew]) else { return };
     let layout = engine.layout(&one(MIXED), None);
     let y = layout.lines[0].rect.center().y;
-    let mut x = -5.0;
-    while x < layout.bounds.width() + 5.0 {
+    for step in 0..400u16 {
+        let x = f64::from(step).mul_add(1.5, -5.0);
+        if x > layout.bounds.width() + 5.0 {
+            break;
+        }
         let caret = layout.hit_test_caret(Point::new(x, y));
         let at = layout.caret_rect(caret, 0.0).unwrap().x0;
         // No other boundary is closer to the click than the one chosen.
@@ -73,7 +76,6 @@ fn hit_testing_in_mixed_text_lands_on_the_nearest_caret_position() {
             .map(|cx| (cx - x).abs())
             .fold(f64::INFINITY, f64::min);
         assert!((at - x).abs() <= best + 1e-6, "x={x}: chose {caret:?} at {at}, best distance {best}");
-        x += 1.5;
     }
 }
 
@@ -86,7 +88,7 @@ fn selection_rectangles_cover_the_selected_characters() {
     let (a, b) = (layout.caret_rect(layout.caret_at(2), 0.0).unwrap().x0, layout.caret_rect(layout.caret_at(7), 0.0).unwrap().x0);
     assert!(close(rects[0].x0, a, 0.01) && close(rects[0].x1, b, 0.01), "{:?} vs {a}..{b}", rects[0]);
     assert!(close(rects[0].height(), layout.lines[0].rect.height(), 0.5));
-    assert!(layout.selection_rects(3..3).is_empty());
+    assert_eq!(layout.selection_rects(3..3).len(), 0);
     assert_eq!(layout.selection_rects(0..100).len(), 1, "ranges are clamped");
 }
 

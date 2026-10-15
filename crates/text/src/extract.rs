@@ -8,7 +8,7 @@ use parley::layout::PositionedLayoutItem;
 use crate::layout::{FontFace, Glyph, GlyphRun, Line, ParaLayout, TextLayout};
 
 /// Appends the lines and glyph runs of `para` to `out`, in layout space.
-pub(crate) fn copy_lines(para: &ParaLayout, paragraph_index: usize, out: &mut TextLayout) {
+pub fn copy_lines(para: &ParaLayout, paragraph_index: usize, out: &mut TextLayout) {
     for (li, line) in para.layout.lines().enumerate() {
         let m = *line.metrics();
         let shift = f64::from(para.shift(li));
@@ -37,16 +37,13 @@ pub(crate) fn copy_lines(para: &ParaLayout, paragraph_index: usize, out: &mut Te
             let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
             let run = gr.run();
             let total = gr.glyphs().count();
-            let skipped = match used.iter_mut().find(|(r, _)| *r == run.index()) {
-                Some((_, n)) => {
-                    let before = *n;
-                    *n = n.saturating_add(total);
-                    before
-                }
-                None => {
-                    used.push((run.index(), total));
-                    0
-                }
+            let skipped = if let Some((_, n)) = used.iter_mut().find(|(r, _)| *r == run.index()) {
+                let before = *n;
+                *n = n.saturating_add(total);
+                before
+            } else {
+                used.push((run.index(), total));
+                0
             };
             // The invisible direction mark in front of the paragraph shapes to a glyph of its own; it is not text.
             let mask = prefix_mask(run, para.prefix);

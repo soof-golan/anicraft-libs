@@ -16,17 +16,17 @@ use parley_data::Properties;
 
 /// Appends text to a shaper-bound string, remembering whether the previous character was a forced line break.
 #[derive(Debug, Default)]
-pub(crate) struct Sanitizer {
+pub struct Sanitizer {
     after_break: bool,
     scrub: bool,
 }
 
 impl Sanitizer {
-    pub(crate) const fn new(scrub: bool) -> Self {
+    pub const fn new(scrub: bool) -> Self {
         Self { after_break: false, scrub }
     }
 
-    pub(crate) fn push(&mut self, out: &mut String, text: &str) {
+    pub fn push(&mut self, out: &mut String, text: &str) {
         let mut chars = text.chars().peekable();
         while let Some(c) = chars.next() {
             let c = match c {
@@ -38,7 +38,7 @@ impl Sanitizer {
             let props = Properties::get(c);
             let c = if self.scrub {
                 placeholder(c)
-            } else if self.after_break && attaches_to_previous(&props, c) {
+            } else if self.after_break && attaches_to_previous(props, c) {
                 invisible(c.len_utf8()).unwrap_or(c)
             } else {
                 c
@@ -51,7 +51,7 @@ impl Sanitizer {
 
 /// Whether parley's analysis merges `c` into the cluster of the character before it (grapheme extenders and spacing
 /// marks, except the zero-width non-joiner and variation selectors).
-fn attaches_to_previous(props: &Properties, c: char) -> bool {
+fn attaches_to_previous(props: Properties, c: char) -> bool {
     let gcb = props.grapheme_cluster_break();
     (gcb == GraphemeClusterBreak::Extend && c != '\u{200C}' && !props.is_variation_selector()) || gcb == GraphemeClusterBreak::SpacingMark
 }

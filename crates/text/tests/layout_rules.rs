@@ -21,7 +21,7 @@ fn left_right_and_center_alignment_place_a_short_line() {
     let center = line(Alignment::Center, &mut engine);
     assert!(close(left.x0, 0.0, 0.01), "{left:?}");
     assert!(close(right.x1, WIDTH, 0.01), "{right:?}");
-    assert!(close((center.x0 + center.x1) / 2.0, WIDTH / 2.0, 0.01), "{center:?}");
+    assert!(close(center.center().x, WIDTH / 2.0, 0.01), "{center:?}");
     assert!(close(left.width(), right.width(), 0.01) && close(left.width(), center.width(), 0.01));
 }
 
@@ -93,7 +93,7 @@ fn a_tiny_or_invalid_width_still_terminates_with_one_character_per_line_at_most(
     let Some(mut engine) = engine() else { return };
     for width in [0.0, -5.0, f64::NAN, f64::INFINITY, 1.0, 0.001] {
         let layout = engine.layout(&one("abcdef ghij"), Some(width));
-        assert!(!layout.lines.is_empty());
+        assert_ne!(layout.lines.len(), 0);
         assert!(layout.lines.len() <= 11, "width {width}: {} lines", layout.lines.len());
         assert!(layout.bounds.width().is_finite() && layout.bounds.height().is_finite());
     }

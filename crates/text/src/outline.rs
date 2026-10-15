@@ -29,7 +29,7 @@ struct FaceKey {
 
 /// Outlines of the glyphs seen so far, per font face, in em units with y up.
 #[derive(Debug, Default)]
-pub(crate) struct OutlineCache {
+pub struct OutlineCache {
     faces: HashMap<FaceKey, HashMap<u32, BezPath>>,
     glyphs: usize,
 }
@@ -72,7 +72,7 @@ fn read_outline(font: &FontRef<'_>, coords: &[NormalizedCoord], glyph: u32) -> B
 
 impl OutlineCache {
     /// The outlines of every glyph of `run` merged into one path in layout space.
-    pub(crate) fn run_path(&mut self, run: &GlyphRun) -> BezPath {
+    pub fn run_path(&mut self, run: &GlyphRun) -> BezPath {
         if self.glyphs > MAX_CACHED_GLYPHS {
             self.faces.clear();
             self.glyphs = 0;
@@ -86,13 +86,11 @@ impl OutlineCache {
         let mut out = BezPath::new();
         let mut added = 0usize;
         for g in &run.glyphs {
-            if !cached.contains_key(&g.id) {
-                let face = font.get_or_insert_with(|| face_of(&run.font));
-                let path = face.as_ref().map(|f| read_outline(f, &coords, g.id)).unwrap_or_default();
-                cached.insert(g.id, path);
+            let path = cached.entry(g.id).or_insert_with(|| {
                 added = added.saturating_add(1);
-            }
-            let Some(path) = cached.get(&g.id) else { continue };
+                let face = font.get_or_insert_with(|| face_of(&run.font));
+                face.as_ref().map(|f| read_outline(f, &coords, g.id)).unwrap_or_default()
+            });
             if path.elements().is_empty() {
                 continue;
             }
@@ -105,7 +103,7 @@ impl OutlineCache {
     }
 
     /// The nodes that draw `layout`: per run a fill (plus a stroke for synthetic bold) and an optional underline.
-    pub(crate) fn display(&mut self, layout: &TextLayout) -> Vec<Node> {
+    pub fn display(&mut self, layout: &TextLayout) -> Vec<Node> {
         let mut nodes = Vec::new();
         for run in &layout.runs {
             if run.color.a == 0 {

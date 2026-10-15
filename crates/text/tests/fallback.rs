@@ -13,7 +13,7 @@ fn text_in(family: &str, text: &str) -> RichText {
 fn system_fonts_are_discovered_without_bundling_any() {
     let Some(mut engine) = engine() else { return };
     let families = engine.families();
-    assert!(!families.is_empty());
+    assert_ne!(families.len(), 0);
     assert!(families.windows(2).all(|w| w[0].to_lowercase() <= w[1].to_lowercase()), "sorted");
     assert!(families.iter().all(|f| !f.starts_with('.')), "private families are hidden");
     let first = families[0].clone();
@@ -106,10 +106,10 @@ fn fallback_chains_only_contain_fonts_that_cover_the_script() {
 #[test]
 fn an_engine_without_system_fonts_degrades_instead_of_failing() {
     let mut engine = TextEngine::without_system_fonts();
-    assert!(engine.families().is_empty());
+    assert_eq!(engine.families().len(), 0);
     assert!(!engine.covers_script(Script::Hebrew));
     let layout = engine.layout(&common::one("No fonts at all"), Some(100.0));
-    assert!(!layout.lines.is_empty());
+    assert_ne!(layout.lines.len(), 0);
     assert!(layout.caret_rect(layout.caret_at(0), 1.0).is_some());
     assert!(engine.to_display(&layout).iter().all(|n| matches!(n, anim_display::Node::Fill(_) | anim_display::Node::Stroke(_))));
 }
@@ -117,10 +117,10 @@ fn an_engine_without_system_fonts_degrades_instead_of_failing() {
 #[test]
 fn registering_garbage_font_data_is_harmless() {
     let mut engine = TextEngine::without_system_fonts();
-    assert!(engine.register_font(Vec::new()).is_empty());
-    assert!(engine.register_font(b"not a font at all, just text".to_vec()).is_empty());
-    assert!(engine.register_font(vec![0; 4096]).is_empty());
-    assert!(engine.families().is_empty());
+    assert_eq!(engine.register_font(Vec::new()).len(), 0);
+    assert_eq!(engine.register_font(b"not a font at all, just text".to_vec()).len(), 0);
+    assert_eq!(engine.register_font(vec![0; 4096]).len(), 0);
+    assert_eq!(engine.families().len(), 0);
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn registered_font_data_becomes_available_by_name() {
     let bytes = std::fs::read(path).unwrap();
     let mut engine = TextEngine::without_system_fonts();
     let names = engine.register_font(bytes);
-    assert!(!names.is_empty());
+    assert_ne!(names.len(), 0);
     assert!(engine.has_family(&names[0]));
     let layout = engine.layout(&text_in(&names[0], "Registered"), None);
     assert!(layout.runs[0].glyphs.iter().all(|g| g.id != 0));

@@ -69,7 +69,7 @@ fn hebrew_space_is_between_the_two_words_in_visual_order() {
     // 9 characters, 9 glyphs: 4 letters, space, 4 letters. Visual order: second word, space, first word.
     assert_eq!(glyphs.len(), 9);
     let space = glyphs[4].id;
-    assert!(glyphs.iter().filter(|g| g.id == space).count() == 1);
+    assert_eq!(glyphs.iter().filter(|g| g.id == space).count(), 1);
     assert!(glyphs[0].id != space && glyphs[8].id != space);
 }
 

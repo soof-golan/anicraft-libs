@@ -18,22 +18,22 @@ const MAX_CHAIN: usize = 6;
 /// Installed families examined by the exhaustive scan, so a machine with a pathological font folder stays responsive.
 const MAX_SCAN: usize = 3000;
 /// Registered font data larger than this is refused.
-pub(crate) const MAX_FONT_BYTES: usize = 128 << 20;
+pub const MAX_FONT_BYTES: usize = 128 << 20;
 
-pub(crate) struct Fonts {
-    pub(crate) cx: FontContext,
+pub struct Fonts {
+    pub cx: FontContext,
     chains: HashMap<Script, Vec<String>>,
 }
 
 impl Fonts {
     /// A font database; `system` loads (lazily) the fonts installed on this machine.
-    pub(crate) fn new(system: bool) -> Self {
+    pub fn new(system: bool) -> Self {
         let collection = Collection::new(CollectionOptions { shared: false, system_fonts: system });
         Self { cx: FontContext { collection, source_cache: SourceCache::default() }, chains: HashMap::new() }
     }
 
     /// Registers TTF/OTF/TTC data and returns the family names it added.
-    pub(crate) fn register(&mut self, bytes: Vec<u8>) -> Vec<String> {
+    pub fn register(&mut self, bytes: Vec<u8>) -> Vec<String> {
         if bytes.is_empty() || bytes.len() > MAX_FONT_BYTES {
             return Vec::new();
         }
@@ -59,19 +59,19 @@ impl Fonts {
     }
 
     /// Every installed or registered family name, sorted, without private (dot-prefixed) families.
-    pub(crate) fn families(&mut self) -> Vec<String> {
+    pub fn families(&mut self) -> Vec<String> {
         let mut names: Vec<String> = self.cx.collection.family_names().filter(|n| !n.starts_with('.')).map(str::to_owned).collect();
         names.sort_by_key(|n| n.to_lowercase());
         names.dedup();
         names
     }
 
-    pub(crate) fn has_family(&mut self, name: &str) -> bool {
+    pub fn has_family(&mut self, name: &str) -> bool {
         self.cx.collection.family_id(name).is_some()
     }
 
     /// Whether the regular face of `family` maps every character of `sample`.
-    pub(crate) fn family_covers(&mut self, family: &str, sample: &str) -> bool {
+    pub fn family_covers(&mut self, family: &str, sample: &str) -> bool {
         let Some(info) = self.cx.collection.family_by_name(family) else { return false };
         let Some(font) = info.default_font() else { return false };
         let Some(blob) = font.load(Some(&mut self.cx.source_cache)) else { return false };
@@ -81,7 +81,7 @@ impl Fonts {
     }
 
     /// Families that can draw `script`, best first; empty when nothing installed covers it.
-    pub(crate) fn chain(&mut self, script: Script) -> Vec<String> {
+    pub fn chain(&mut self, script: Script) -> Vec<String> {
         if let Some(chain) = self.chains.get(&script) {
             return chain.clone();
         }
@@ -127,18 +127,18 @@ mod tests {
     #[test]
     fn empty_database_has_no_families_and_no_chains() {
         let mut fonts = Fonts::new(false);
-        assert!(fonts.families().is_empty());
+        assert_eq!(fonts.families(), Vec::<String>::new());
         assert!(!fonts.has_family("DejaVu Sans"));
-        assert!(fonts.chain(Script::Hebrew).is_empty());
+        assert_eq!(fonts.chain(Script::Hebrew), Vec::<String>::new());
         assert!(!fonts.family_covers("nothing", "a"));
     }
 
     #[test]
     fn garbage_font_data_registers_nothing() {
         let mut fonts = Fonts::new(false);
-        assert!(fonts.register(Vec::new()).is_empty());
-        assert!(fonts.register(vec![1, 2, 3, 4, 5, 6, 7, 8]).is_empty());
-        assert!(fonts.families().is_empty());
+        assert_eq!(fonts.register(Vec::new()), Vec::<String>::new());
+        assert_eq!(fonts.register(vec![1, 2, 3, 4, 5, 6, 7, 8]), Vec::<String>::new());
+        assert_eq!(fonts.families(), Vec::<String>::new());
     }
 
     #[test]
