@@ -127,6 +127,9 @@ pub enum ContainerWriter {
 impl ContainerWriter {
     /// Creates `path` as a zip file or a folder, according to `kind`.
     ///
+    /// The destination is written in place. For crash-safe saves, write the zip somewhere temporary with
+    /// [`ZipWriter::new`] on the temporary file and rename it over the target afterwards.
+    ///
     /// # Errors
     ///
     /// Fails when the file or folder cannot be created.

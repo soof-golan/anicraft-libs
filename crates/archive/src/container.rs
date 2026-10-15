@@ -6,7 +6,7 @@ use crate::entry::{CompressionMethod, DosDateTime, Entry, Location};
 use crate::error::{ArchiveError, Result};
 use crate::limits::Limits;
 use crate::lookup::NameIndex;
-use crate::names::normalize_name;
+use crate::names::{href_to_entry_name, normalize_name};
 use crate::writer::{ArchiveWriter, NewEntry};
 use crate::zip_index::{self, IndexSource, RawEntry, ReadSeek};
 use crate::zip_read;
@@ -209,6 +209,14 @@ impl Container {
     #[must_use]
     pub fn find(&self, name: &str) -> Option<&Entry> {
         self.names.find(name).and_then(|position| self.entries.get(position))
+    }
+
+    /// Looks up the entry an XFL `href` refers to: `find_href("Tween 1.xml", "LIBRARY")` finds `LIBRARY/Tween 1.xml`.
+    ///
+    /// The `href` is the attribute text as an XML parser returns it. See [`crate::names::href_to_entry_name`].
+    #[must_use]
+    pub fn find_href(&self, href: &str, base_dir: &str) -> Option<&Entry> {
+        self.find(&href_to_entry_name(href, base_dir))
     }
 
     /// True when `name` is an entry or a directory implied by the entries below it (zips often omit directory
