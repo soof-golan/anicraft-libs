@@ -16,6 +16,7 @@ anim-audio = { path = "crates/audio" }
 anim-artwork = { path = "crates/artwork" }
 anim-core = { path = "crates/core" }
 anim-display = { path = "crates/display" }
+anim-mcp = { path = "crates/mcp" }
 anim-morph = { path = "crates/morph" }
 anim-render = { path = "crates/render" }
 anim-rig = { path = "crates/rig" }
@@ -74,6 +75,12 @@ encoding_rs = "0.8"
 crc32fast = "1.5"
 unicode-normalization = "0.1"
 tempfile = "3"
+# MCP: the official Rust SDK with the stdio transport (tokio runs only inside the front-end; documents stay on actors).
+rmcp = { version = "3.5", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync", "time", "net"] }
+schemars = "1"
+base64 = "0.22"
+getrandom = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
