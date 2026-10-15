@@ -167,6 +167,21 @@ fn explicit_direction_overrides_the_first_strong_character() {
 }
 
 #[test]
+fn brackets_are_mirrored_in_right_to_left_text() {
+    let Some(mut engine) = engine_for(&[Script::Hebrew]) else { return };
+    let ltr = engine.layout(&para("()", Alignment::Left, Direction::Ltr), None);
+    let ids = glyph_ids(&ltr);
+    assert_eq!(ids.len(), 2);
+    let (open, close) = (ids[0], ids[1]);
+    assert_ne!(open, close);
+    // Logical "(ש)" in a right-to-left line: the opening bracket is at the right and is drawn with the closing glyph.
+    let rtl = engine.layout(&para("(ש)", Alignment::Start, Direction::Rtl), None);
+    let visual = glyph_ids(&rtl);
+    assert_eq!(visual.len(), 3);
+    assert_eq!((visual[0], visual[2]), (open, close), "mirrored: {visual:?} vs open {open} close {close}");
+}
+
+#[test]
 fn numbers_inside_hebrew_stay_left_to_right() {
     let Some(mut engine) = engine_for(&[Script::Hebrew]) else { return };
     let layout = engine.layout(&one("שלום 2024 עולם"), None);
