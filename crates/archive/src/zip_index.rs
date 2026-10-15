@@ -13,7 +13,7 @@ use crate::bytes::{self, Cursor, le_u16, le_u32, le_u64};
 use crate::error::{ArchiveError, Result};
 use crate::limits::Limits;
 use flate2::{Decompress, FlushDecompress, Status};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -100,6 +100,10 @@ fn add(a: u64, b: u64) -> Result<u64> {
     a.checked_add(b).ok_or_else(|| ArchiveError::malformed("offset arithmetic overflows"))
 }
 
+fn distinct_names(entries: &[RawEntry]) -> usize {
+    entries.iter().map(|e| e.raw_name.as_slice()).collect::<HashSet<_>>().len()
+}
+
 /// Indexes the zip in `reader` (`len` bytes long), trying every strategy in turn.
 pub fn build_index(reader: &mut dyn ReadSeek, len: u64, limits: &Limits) -> Result<Index> {
     let mut warnings = Vec::new();
@@ -107,6 +111,21 @@ pub fn build_index(reader: &mut dyn ReadSeek, len: u64, limits: &Limits) -> Resu
         Ok((entries, source)) => {
             if source == IndexSource::ZipCrateFixedOffset {
                 warnings.push("the end-of-central-directory record disagrees with the directory (as in files saved by Animate); the archive was read as starting at byte 0".to_owned());
+            }
+            // The end record's entry count is only 16 bits (writers that ignore Zip64 wrap it) and can simply be
+            // wrong; the zip crate trusts it. If the directory itself holds more names, believe the directory.
+            let mut probe_warnings = Vec::new();
+            match index_central_directory(reader, len, limits, &mut probe_warnings) {
+                Ok(listed) if distinct_names(&listed) > distinct_names(&entries) => {
+                    warnings.push(format!(
+                        "the end record counts {} entries but the central directory lists {}; using the directory",
+                        distinct_names(&entries),
+                        distinct_names(&listed)
+                    ));
+                    return Ok(Index { entries: listed, source: IndexSource::CentralDirectory, warnings });
+                }
+                Err(e @ ArchiveError::LimitExceeded { .. }) => return Err(e),
+                Ok(_) | Err(_) => {}
             }
             return Ok(Index { entries, source, warnings });
         }
@@ -205,8 +224,8 @@ fn zip_error(error: zip::result::ZipError) -> ArchiveError {
 /// The fields of the End Of Central Directory record that matter here.
 #[derive(Debug, Clone, Copy)]
 struct Eocd {
-    /// Absolute position of the EOCD signature.
-    position: u64,
+    /// Where the central directory ends: the Zip64 record when there is one, else the EOCD.
+    directory_end: u64,
     cd_offset: u64,
     cd_size: u64,
 }
@@ -248,23 +267,39 @@ fn find_eocd(reader: &mut dyn ReadSeek, len: u64) -> Result<Eocd> {
     let cd_size = u64::from(c.u32()?);
     let cd_offset = u64::from(c.u32()?);
     let position = add(tail_start, u64::try_from(at).map_err(|_| ArchiveError::truncated())?)?;
-    let mut eocd = Eocd { position, cd_offset, cd_size };
+    let mut eocd = Eocd { directory_end: position, cd_offset, cd_size };
     let needs_zip64 = cd_offset == u64::from(U32_MAX_MARK) || cd_size == u64::from(U32_MAX_MARK) || entries_total == u16::MAX;
-    if needs_zip64 {
-        // The Zip64 locator sits immediately before the EOCD and points at the Zip64 EOCD record.
-        if let Some(locator_at) = position.checked_sub(20) {
-            let locator = read_exact_at(reader, locator_at, 20)?;
-            if locator.get(..4) == Some(&SIG_LOCATOR64) {
-                let record_at = le_u64(&locator, 8).ok_or_else(ArchiveError::truncated)?;
-                let record = read_exact_at(reader, record_at, 56)?;
-                if record.get(..4) == Some(&SIG_EOCD64) {
-                    eocd.cd_size = le_u64(&record, 40).ok_or_else(ArchiveError::truncated)?;
-                    eocd.cd_offset = le_u64(&record, 48).ok_or_else(ArchiveError::truncated)?;
-                }
-            }
-        }
+    if needs_zip64 && let Some((record_position, record)) = find_zip64_record(reader, position)? {
+        eocd.directory_end = record_position;
+        eocd.cd_size = le_u64(&record, 40).ok_or_else(ArchiveError::truncated)?;
+        eocd.cd_offset = le_u64(&record, 48).ok_or_else(ArchiveError::truncated)?;
     }
     Ok(eocd)
+}
+
+/// Finds the Zip64 end-of-central-directory record that the locator before the EOCD at `eocd_position` points at.
+///
+/// The locator's offset is relative to the archive start. When bytes were put in front of the archive the offset is
+/// wrong, so the record is also searched for in the 64 KiB before the locator (the record comes right before it,
+/// followed at most by an extensible data sector).
+fn find_zip64_record(reader: &mut dyn ReadSeek, eocd_position: u64) -> Result<Option<(u64, Vec<u8>)>> {
+    const RECORD_LEN: usize = 56;
+    let Some(locator_at) = eocd_position.checked_sub(20) else { return Ok(None) };
+    let locator = read_exact_at(reader, locator_at, 20)?;
+    if locator.get(..4) != Some(&SIG_LOCATOR64) {
+        return Ok(None);
+    }
+    let declared = le_u64(&locator, 8).ok_or_else(ArchiveError::truncated)?;
+    if let Ok(record) = read_exact_at(reader, declared, RECORD_LEN)
+        && record.get(..4) == Some(&SIG_EOCD64)
+    {
+        return Ok(Some((declared, record)));
+    }
+    let window_start = locator_at.saturating_sub(65_536);
+    let window = read_exact_at(reader, window_start, usize::try_from(locator_at.saturating_sub(window_start)).map_err(|_| ArchiveError::truncated())?)?;
+    let Some(found) = bytes::rfind(&window, &SIG_EOCD64) else { return Ok(None) };
+    let position = add(window_start, u64::try_from(found).map_err(|_| ArchiveError::truncated())?)?;
+    Ok(read_exact_at(reader, position, RECORD_LEN).ok().map(|record| (position, record)))
 }
 
 /// Reads Zip64 extended information, replacing the 32-bit fields that hold the `0xFFFFFFFF` marker.
@@ -302,7 +337,7 @@ fn apply_zip64_extra(
 fn index_central_directory(reader: &mut dyn ReadSeek, len: u64, limits: &Limits, warnings: &mut Vec<String>) -> Result<Vec<RawEntry>> {
     let eocd = find_eocd(reader, len)?;
     // The declared offset first; then the position implied by the directory size (archives with a prefix).
-    let implied = eocd.position.checked_sub(eocd.cd_size);
+    let implied = eocd.directory_end.checked_sub(eocd.cd_size);
     let mut start = None;
     for candidate in [Some(eocd.cd_offset), implied].into_iter().flatten() {
         if candidate < len && read_exact_at(reader, candidate, 4).is_ok_and(|sig| sig == SIG_CENTRAL) {
@@ -621,6 +656,7 @@ fn scan_local_headers(reader: &mut dyn ReadSeek, len: u64, limits: &Limits, warn
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects, clippy::as_conversions, reason = "test code doing sums on small known offsets")]
 mod tests {
     use super::*;
     use std::io::Cursor as IoCursor;
@@ -675,6 +711,94 @@ mod tests {
         let mut warnings = Vec::new();
         let entries = scan_local_headers(&mut IoCursor::new(zip), len, &Limits::default(), &mut warnings).unwrap();
         assert_eq!(entries.len(), 2);
+    }
+
+    /// An archive from the crate's own writer with a mix of methods, directories, empty files and non-ASCII names.
+    fn writer_archive(zip64: crate::zip_write::Zip64) -> Vec<u8> {
+        use crate::writer::ArchiveWriter;
+        let text: Vec<u8> = b"<DOMTimeline name=\"Layer 1\"/>\r\n".iter().copied().cycle().take(5000).collect();
+        let noise: Vec<u8> = (0..3000_u32).map(|i| i.wrapping_mul(2_654_435_761).to_le_bytes()[2]).collect();
+        let options = crate::zip_write::WriteOptions { zip64, ..crate::zip_write::WriteOptions::default() };
+        let mut writer = crate::zip_write::ZipWriter::with_mimetype(Vec::new(), "application/vnd.adobe.xfl", options).unwrap();
+        writer.add_dir("LIBRARY").unwrap();
+        writer.add_file("DOMDocument.xml", &text).unwrap();
+        writer.add_file("LIBRARY/\u{5e9}\u{5dc}\u{5d5}\u{5dd}.xml", &text).unwrap();
+        writer.add_file("bin/M 1.dat", &noise).unwrap();
+        writer.add_file("empty.txt", b"").unwrap();
+        writer.finish().unwrap()
+    }
+
+    fn keys(entries: &[RawEntry]) -> Vec<(Vec<u8>, u16, u32, u64, u64, u64)> {
+        entries.iter().map(|e| (e.raw_name.clone(), e.method, e.crc32, e.compressed_size, e.size, e.header_offset)).collect()
+    }
+
+    fn end_record_at(bytes: &[u8]) -> usize {
+        bytes.len() - 22
+    }
+
+    #[test]
+    fn tolerant_central_directory_ignores_a_wrong_declared_size() {
+        let clean = writer_archive(crate::zip_write::Zip64::Auto);
+        let len = u64::try_from(clean.len()).unwrap();
+        let (expected, _) = index_with_zip_crate(&mut IoCursor::new(clean.clone()), &Limits::default()).unwrap();
+        for delta in [54_i64, 1, -1, -30, 100_000] {
+            let mut bytes = clean.clone();
+            let at = end_record_at(&bytes) + 12;
+            let declared = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+            let patched = u32::try_from(i64::from(declared) + delta).unwrap();
+            bytes[at..at + 4].copy_from_slice(&patched.to_le_bytes());
+            let found = index_central_directory(&mut IoCursor::new(bytes), len, &Limits::default(), &mut Vec::new()).unwrap();
+            assert_eq!(keys(&found), keys(&expected), "declared size off by {delta}");
+        }
+    }
+
+    #[test]
+    fn tolerant_central_directory_follows_zip64_and_prefixes() {
+        let clean = writer_archive(crate::zip_write::Zip64::Always);
+        let (expected, _) = index_with_zip_crate(&mut IoCursor::new(clean.clone()), &Limits::default()).unwrap();
+        let len = u64::try_from(clean.len()).unwrap();
+        let found = index_central_directory(&mut IoCursor::new(clean.clone()), len, &Limits::default(), &mut Vec::new()).unwrap();
+        assert_eq!(keys(&found), keys(&expected));
+        assert!(found.iter().any(|e| e.size > 0), "sizes come from the Zip64 extra field");
+
+        // Bytes in front of the archive shift every offset by the same amount.
+        let mut shifted = vec![0xAA_u8; 777];
+        shifted.extend_from_slice(&clean);
+        let shifted_len = u64::try_from(shifted.len()).unwrap();
+        let found = index_central_directory(&mut IoCursor::new(shifted), shifted_len, &Limits::default(), &mut Vec::new()).unwrap();
+        let moved: Vec<_> = keys(&expected).into_iter().map(|(n, m, c, cs, s, o)| (n, m, c, cs, s, o + 777)).collect();
+        assert_eq!(keys(&found), moved);
+    }
+
+    #[test]
+    fn scan_reproduces_the_directory_of_writer_output_including_zip64() {
+        for zip64 in [crate::zip_write::Zip64::Auto, crate::zip_write::Zip64::Always] {
+            let clean = writer_archive(zip64);
+            let (expected, _) = index_with_zip_crate(&mut IoCursor::new(clean.clone()), &Limits::default()).unwrap();
+            let directory_start = expected.iter().map(|e| e.header_offset).max().unwrap();
+            // Keep everything up to and including the last entry, drop the directory and end records.
+            let last = expected.last().unwrap();
+            let cut = usize::try_from(
+                directory_start + 30 + last.raw_name.len() as u64 + if zip64 == crate::zip_write::Zip64::Always { 20 } else { 0 } + last.compressed_size,
+            )
+            .unwrap();
+            let head = clean[..cut].to_vec();
+            let len = u64::try_from(head.len()).unwrap();
+            let found = scan_local_headers(&mut IoCursor::new(head), len, &Limits::default(), &mut Vec::new()).unwrap();
+            assert_eq!(keys(&found), keys(&expected), "{zip64:?}");
+        }
+    }
+
+    #[test]
+    fn forged_end_records_cannot_force_huge_allocations() {
+        let mut bytes = writer_archive(crate::zip_write::Zip64::Always);
+        let record = bytes.windows(4).position(|w| w == SIG_EOCD64).unwrap();
+        // Entry counts and directory size claim 2^64 - 1.
+        for field in [24_usize, 32, 40] {
+            bytes[record + field..record + field + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        }
+        let len = u64::try_from(bytes.len()).unwrap();
+        let _ = build_index(&mut IoCursor::new(bytes), len, &Limits::small());
     }
 
     /// Runs the three strategies on the real sample archives (when `ANICRAFT_SAMPLES` is set) and checks that they
