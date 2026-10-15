@@ -28,12 +28,12 @@ pub mod segment;
 pub mod styles;
 
 pub use anim_display::{Cap, GradientStop, Interpolation, Join, Spread, StrokeScale};
-pub use assemble::{Assembled, FillRegion, StrokeRun};
+pub use assemble::{Assembled, FillRegion, StrokeRun, split_subpaths};
 pub use build::PathInput;
 pub use codec::{CubicRun, encode_cubic, encode_edges, parse_cubics, parse_edges};
 pub use display::{ImageResolver, NoImages};
 pub use edges::{Edge, EdgeShape, XflEdge};
 pub use error::{ParseError, ParseErrorKind, ShapeError};
-pub use geometry::Hit;
+pub use geometry::{Hit, SegmentHit};
 pub use segment::{Segment, TWIPS_PER_PX};
 pub use styles::{BITMAP_MATRIX_SCALE, BitmapFill, FillStyle, GradientFill, OtherStroke, SolidStroke, StrokeKind, StrokeStyle, XflName};

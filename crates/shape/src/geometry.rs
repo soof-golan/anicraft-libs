@@ -4,7 +4,7 @@
 //! Hit testing works on an [`Assembled`] shape so that tools can assemble once and test many points; the
 //! [`EdgeShape`] methods assemble on every call and are meant for one-off queries.
 
-use anim_core::kurbo::{ParamCurveExtrema, ParamCurveNearest, Shape};
+use anim_core::kurbo::{ParamCurve, ParamCurveExtrema, ParamCurveNearest, Shape};
 use anim_core::{Point, Rect};
 
 use crate::assemble::Assembled;
@@ -90,6 +90,39 @@ impl EdgeShape {
     pub fn hit_test(&self, p: Point, tolerance: f64) -> Option<Hit> {
         self.assemble().hit_test(p, tolerance)
     }
+
+    /// The segment of any edge that is nearest to `p` and within `max_distance` pixels, for selection and curve
+    /// editing tools. Ties go to the earlier edge and segment.
+    #[must_use]
+    pub fn nearest_segment(&self, p: Point, max_distance: f64) -> Option<SegmentHit> {
+        let mut best: Option<SegmentHit> = None;
+        for (edge, e) in self.edges.iter().enumerate() {
+            for (segment, s) in e.segments.iter().enumerate() {
+                let seg = s.to_path_seg(1.0 / TWIPS_PER_PX);
+                let nearest = seg.nearest(p, NEAREST_ACCURACY);
+                let distance = nearest.distance_sq.sqrt();
+                if distance <= max_distance && best.is_none_or(|b| distance < b.distance) {
+                    best = Some(SegmentHit { edge, segment, t: nearest.t, distance, point: ParamCurve::eval(&seg, nearest.t) });
+                }
+            }
+        }
+        best
+    }
+}
+
+/// The result of [`EdgeShape::nearest_segment`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SegmentHit {
+    /// Index into [`EdgeShape::edges`].
+    pub edge: usize,
+    /// Index into that edge's segments.
+    pub segment: usize,
+    /// Position along the segment, 0 (start) to 1 (end).
+    pub t: f64,
+    /// Distance from the query point, in pixels.
+    pub distance: f64,
+    /// The nearest point on the segment, in pixels.
+    pub point: Point,
 }
 
 #[cfg(test)]
@@ -172,5 +205,18 @@ mod tests {
         assert_eq!(shape.fill_at(Point::new(10.0, 10.0)), None);
         let b = shape.bounds().unwrap();
         assert_eq!((b.x0, b.x1), (100.0, 120.0));
+    }
+
+    #[test]
+    fn nearest_segment_finds_the_closest_side() {
+        let shape = framed_square();
+        // The outline is one edge of four lines: top, right, bottom, left.
+        let near_right = shape.nearest_segment(Point::new(21.5, 8.0), 5.0).unwrap();
+        assert_eq!((near_right.edge, near_right.segment), (0, 1));
+        assert!((near_right.distance - 1.5).abs() < 1e-6);
+        assert!((near_right.point.x - 20.0).abs() < 1e-6 && (near_right.point.y - 8.0).abs() < 1e-6);
+        assert!((near_right.t - 0.4).abs() < 1e-3);
+        assert!(shape.nearest_segment(Point::new(100.0, 100.0), 5.0).is_none());
+        assert!(EdgeShape::default().nearest_segment(Point::ZERO, 100.0).is_none());
     }
 }

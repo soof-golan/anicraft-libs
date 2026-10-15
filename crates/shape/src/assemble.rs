@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use anim_core::kurbo::PathEl;
 use anim_core::num::round_f64_to_i64;
 use anim_core::{BezPath, Point};
 
@@ -36,6 +37,43 @@ pub struct StrokeRun {
     pub width: f64,
     /// Pixel space.
     pub path: BezPath,
+}
+
+impl FillRegion {
+    /// The closed contours of the region, one path each (outer boundaries and holes alike).
+    #[must_use]
+    pub fn contours(&self) -> Vec<BezPath> {
+        split_subpaths(&self.path)
+    }
+}
+
+impl StrokeRun {
+    /// The polylines of the run, one path each.
+    #[must_use]
+    pub fn polylines(&self) -> Vec<BezPath> {
+        split_subpaths(&self.path)
+    }
+}
+
+/// Splits a path into one path per subpath (each starting at a `MoveTo`).
+#[must_use]
+pub fn split_subpaths(path: &BezPath) -> Vec<BezPath> {
+    let mut out: Vec<BezPath> = Vec::new();
+    for element in path.elements() {
+        match *element {
+            PathEl::MoveTo(p) => {
+                let mut next = BezPath::new();
+                next.move_to(p);
+                out.push(next);
+            }
+            other => {
+                if let Some(current) = out.last_mut() {
+                    current.push(other);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The paintable result of [`EdgeShape::assemble`], in painter's order (fills by index, then strokes by index).
@@ -534,5 +572,47 @@ mod tests {
         let s = shape(0, 1, vec![edge(0, 0, 1, "!0 0|100 0!500 500|600 500")]);
         let a = s.assemble();
         assert_eq!(a.strokes.first().unwrap().path.elements().iter().filter(|e| matches!(e, anim_core::kurbo::PathEl::MoveTo(_))).count(), 2);
+    }
+
+    #[test]
+    fn regions_and_runs_split_into_their_contours() {
+        let outer = edge(0, 1, 1, "!0 0|400 0|400 400|0 400|0 0");
+        let hole = edge(0, 1, 0, "!100 100|100 300|300 300|300 100|100 100");
+        let s = shape(1, 1, vec![outer, hole]);
+        let a = s.assemble();
+        let contours = a.fills.first().unwrap().contours();
+        assert_eq!(contours.len(), 2);
+        assert!(contours.iter().all(|c| matches!(c.elements().last(), Some(anim_core::kurbo::PathEl::ClosePath))));
+        assert_eq!(a.strokes.first().unwrap().polylines().len(), 1);
+        assert_eq!(split_subpaths(&BezPath::new()).len(), 0);
+    }
+
+    #[test]
+    #[allow(clippy::arithmetic_side_effects, reason = "index arithmetic in a test")]
+    fn large_shuffled_shapes_assemble_quickly() {
+        // 30 000 sides of a regular polygon, one edge each, stored in a scrambled order with mixed directions.
+        let n = 30_000_u32;
+        let point = |i: u32| {
+            let angle = std::f64::consts::TAU * f64::from(i % n) / f64::from(n);
+            Point::new(10_000.0 * angle.cos(), 10_000.0 * angle.sin())
+        };
+        let mut edges: Vec<Edge> = (0..n)
+            .map(|i| {
+                let segment = Segment::Line { from: point(i), to: point(i + 1) };
+                // Increasing angle is clockwise on a y-down screen: interior on the right.
+                if i % 3 == 0 { Edge::new(1, 0, 0, vec![segment.reversed()]) } else { Edge::new(0, 1, 0, vec![segment]) }
+            })
+            .collect();
+        // A fixed permutation: multiply indices by a number coprime with n.
+        let stride = 7_919_usize;
+        let len = edges.len();
+        let scrambled: Vec<Edge> = (0..len).map(|i| edges[(i * stride) % len].clone()).collect();
+        edges = scrambled;
+        let s = shape(1, 0, edges);
+        let started = std::time::Instant::now();
+        let a = s.assemble();
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "assembly took {:?}", started.elapsed());
+        assert_eq!(a.fills.len(), 1);
+        assert_eq!(a.fills.first().unwrap().contours().len(), 1);
     }
 }

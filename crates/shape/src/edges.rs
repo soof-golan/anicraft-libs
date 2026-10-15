@@ -466,6 +466,16 @@ mod tests {
     }
 
     #[test]
+    fn serde_keeps_the_original_text() {
+        let input = vec![xfl(0, 1, 1, "\r\n!1 2|3 4"), xfl(1, 0, 0, BR_EDGE), cubics_only(BR_CUBIC_A)];
+        let shape = EdgeShape::from_xfl(vec![FillStyle::default()], vec![StrokeStyle::default()], &input).unwrap();
+        let json = serde_json::to_string(&shape).unwrap();
+        let back: EdgeShape = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, shape);
+        assert_eq!(back.to_xfl_edges(), input);
+    }
+
+    #[test]
     fn interning_reuses_equal_styles() {
         let mut shape = EdgeShape::default();
         let red = FillStyle::Solid(Rgba8::opaque(255, 0, 0));
