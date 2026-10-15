@@ -23,5 +23,7 @@ skrifa = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+anim-render = { workspace = true }
+png = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }

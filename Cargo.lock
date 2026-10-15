@@ -223,10 +223,12 @@ version = "0.1.0"
 dependencies = [
  "anim-core",
  "anim-display",
+ "anim-render",
  "fontique",
  "icu_properties",
  "parley",
  "parley_data",
+ "png",
  "proptest",
  "serde",
  "serde_json",
