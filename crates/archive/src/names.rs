@@ -59,15 +59,16 @@ pub fn is_safe_relative(name: &str) -> bool {
     parts.all(|p| p != "..")
 }
 
-/// Characters Animate escapes in file names: the ones Windows forbids, plus control characters.
+/// Characters Animate escapes in file names: the ones Windows forbids, plus control characters. NUL is left alone: it
+/// can never be part of a name (readers cut names at it, writers refuse it), and decoding `&#000` would invent one.
 const fn needs_filename_escape(c: char) -> bool {
-    matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '\\') || c.is_ascii_control()
+    matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '\\') || (c.is_ascii_control() && c != '\0')
 }
 
 /// Turns Animate's `&#NNN` file-name escapes back into the characters they stand for (`&#060` becomes `<`).
 ///
-/// Only the exact form `&#` + three decimal digits (value 1..=127, optional trailing `;`) is decoded; anything else
-/// stays literal, so ordinary names pass through unchanged.
+/// Only the exact form `&#` + three decimal digits (value 1..=127, no semicolon) is decoded; anything else stays
+/// literal, so ordinary names pass through unchanged.
 #[must_use]
 pub fn unescape_filename(name: &str) -> Cow<'_, str> {
     if !name.contains("&#") {
@@ -83,7 +84,7 @@ pub fn unescape_filename(name: &str) -> Cow<'_, str> {
         let decoded = digits.and_then(|d| d.parse::<u32>().ok()).filter(|v| (1..=127).contains(v)).and_then(char::from_u32);
         if let (Some(ch), Some(rest_after)) = (decoded, after.get(3..)) {
             out.push(ch);
-            rest = rest_after.strip_prefix(';').unwrap_or(rest_after);
+            rest = rest_after;
         } else {
             out.push_str("&#");
             rest = after;
@@ -259,12 +260,22 @@ mod tests {
     }
 
     #[test]
+    fn filename_escaping_never_invents_or_hides_a_nul() {
+        // Regression: found by the round-trip property test.
+        assert_eq!(escape_filename("a\0b"), "a\0b");
+        assert_eq!(unescape_filename(&escape_filename("a\0b")), "a\0b");
+        assert_eq!(escape_filename("tab\there"), "tab&#009here");
+        assert_eq!(unescape_filename("tab&#009here"), "tab\there");
+    }
+
+    #[test]
     fn filename_unescape_leaves_lookalikes_alone() {
         assert_eq!(unescape_filename("a&#xyz"), "a&#xyz");
         assert_eq!(unescape_filename("a&#06"), "a&#06");
         assert_eq!(unescape_filename("a&#000"), "a&#000");
         assert_eq!(unescape_filename("a&#999"), "a&#999");
-        assert_eq!(unescape_filename("a&#060;b"), "a<b");
+        // Animate writes no semicolon, so a following `;` is ordinary text (this keeps escaping reversible).
+        assert_eq!(unescape_filename("a&#060;b"), "a<;b");
         assert_eq!(unescape_filename("&#"), "&#");
         assert_eq!(unescape_filename("&#&#060"), "&#<");
     }

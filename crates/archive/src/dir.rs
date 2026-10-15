@@ -131,7 +131,7 @@ impl DirectoryWriter {
 
     fn target(&self, name: &str) -> Result<(String, PathBuf)> {
         let normalized = normalize_name(name);
-        if !is_safe_relative(&normalized) {
+        if name.contains('\0') || !is_safe_relative(&normalized) {
             return Err(ArchiveError::InvalidName(name.to_owned()));
         }
         let escaped = escape_filename(normalized.trim_end_matches('/'));

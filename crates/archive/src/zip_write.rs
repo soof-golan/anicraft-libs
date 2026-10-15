@@ -147,7 +147,8 @@ impl<W: Write> ZipWriter<W> {
             EntryName::Raw(raw) => decode_name(raw, false).0,
         };
         let mut normalized = normalize_name(&text);
-        if !is_safe_relative(&normalized) {
+        // Reading cuts names at a NUL, so a name holding one could never be read back as written.
+        if text.contains('\0') || !is_safe_relative(&normalized) {
             return Err(ArchiveError::InvalidName(text));
         }
         if entry.is_dir && !normalized.ends_with('/') {
