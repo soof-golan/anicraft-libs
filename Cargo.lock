@@ -214,6 +214,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "anim-export"
+version = "0.1.0"
+dependencies = [
+ "anim-core",
+ "anim-display",
+ "anim-render",
+ "base64 0.22.1",
+ "gif",
+ "png",
+ "proptest",
+ "roxmltree 0.21.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "anim-mcp"
 version = "0.1.0"
 dependencies = [
