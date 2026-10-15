@@ -154,6 +154,40 @@ fn fla_survives_a_rewrite_byte_for_byte_and_is_deterministic() {
     assert_eq!(read_all(&copy), before);
 }
 
+/// Writes archives for checking with other zip tools (`unzip -t`, Python's `zipfile`, 7-Zip, Finder, Explorer).
+/// Set `ANIM_ARCHIVE_INTEROP_DIR` to an empty folder; without it the test does nothing.
+#[test]
+fn write_archives_for_interop_checks() {
+    let Some(out) = std::env::var_os("ANIM_ARCHIVE_INTEROP_DIR").map(PathBuf::from) else { return };
+    std::fs::create_dir_all(&out).unwrap();
+
+    let mut writer = ContainerWriter::create(out.join("synthetic.fla"), ContainerKind::Zip).unwrap();
+    writer.add_file("mimetype", anim_archive::XFL_MIMETYPE.as_bytes()).unwrap();
+    writer.add_dir("LIBRARY").unwrap();
+    writer.add_file("DOMDocument.xml", "<DOMDocument/>".repeat(500).as_bytes()).unwrap();
+    writer.add_file("LIBRARY/\u{5e9}\u{5dc}\u{5d5}\u{5dd} \u{5e2}\u{5d5}\u{5dc}\u{5dd}.xml", b"<DOMSymbolItem/>").unwrap();
+    writer.add_file("LIBRARY/&#060Clip Group&#062.xml", b"<DOMSymbolItem/>").unwrap();
+    writer.add_file("bin/empty.dat", b"").unwrap();
+    writer.finish().unwrap();
+
+    let options = WriteOptions { zip64: anim_archive::Zip64::Always, ..WriteOptions::default() };
+    let mut zip64 = ZipWriter::with_options(Vec::new(), options);
+    zip64.add_file("a.txt", "zip64 entry ".repeat(1000).as_bytes()).unwrap();
+    zip64.add_dir("dir").unwrap();
+    zip64.add_file("dir/b.bin", &[1, 2, 3, 4]).unwrap();
+    std::fs::write(out.join("zip64.zip"), zip64.finish().unwrap()).unwrap();
+
+    if let Some(dir) = samples() {
+        let source = Container::open(dir.join("derwood_green_choreo_short.fla")).unwrap();
+        let mut writer = ContainerWriter::create(out.join("derwood_rewritten.fla"), ContainerKind::Zip).unwrap();
+        source.copy_to(&mut writer).unwrap();
+        writer.finish().unwrap();
+        let mut writer = ContainerWriter::create(out.join("derwood_rewritten.xfl"), ContainerKind::Folder).unwrap();
+        source.copy_to(&mut writer).unwrap();
+        writer.finish().unwrap();
+    }
+}
+
 #[test]
 fn fla_converts_to_an_xfl_folder_and_back() {
     let Some(dir) = samples() else { return };
