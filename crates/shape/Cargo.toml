@@ -23,4 +23,4 @@ proptest = { workspace = true }
 # The preview test (tests/preview.rs) reads the sample XML and rasterises shapes to PNG contact sheets.
 roxmltree = "0.21"
 serde_json = { workspace = true }
-tiny-skia = { workspace = true }
+tiny-skia = { workspace = true, features = ["png-format"] }
