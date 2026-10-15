@@ -223,7 +223,12 @@ fn hostile_display_lists_still_produce_valid_svg() {
     let mut bad = rect_path(0.0, 0.0, 10.0, 10.0);
     bad.line_to((f64::NAN, 1.0));
     list.nodes.push(Node::Fill(Fill { transform: Affine::IDENTITY, path: bad, rule: FillRule::NonZero, paint: Paint::Solid(RED) }));
-    list.nodes.push(Node::Fill(Fill { transform: Affine::new([f64::INFINITY, 0.0, 0.0, 1.0, 0.0, 0.0]), path: rect_path(0.0, 0.0, 1.0, 1.0), rule: FillRule::NonZero, paint: Paint::Solid(RED) }));
+    list.nodes.push(Node::Fill(Fill {
+        transform: Affine::new([f64::INFINITY, 0.0, 0.0, 1.0, 0.0, 0.0]),
+        path: rect_path(0.0, 0.0, 1.0, 1.0),
+        rule: FillRule::NonZero,
+        paint: Paint::Solid(RED),
+    }));
     list.nodes.push(Node::Group(Group {
         transform: Affine::scale_non_uniform(0.0, 1.0),
         filters: vec![anim_display::Filter::Blur { x: 1e12, y: f64::NAN, quality: 255 }],
@@ -436,7 +441,13 @@ mod props {
             (wild_affine(), prop::collection::vec((wild(), wild()), 0..6)).prop_map(|(transform, pts)| {
                 let mut path = anim_core::BezPath::new();
                 for (i, (x, y)) in pts.into_iter().enumerate() {
-                    if i == 0 { path.move_to((x, y)) } else if i % 3 == 0 { path.close_path() } else { path.line_to((x, y)) }
+                    if i == 0 {
+                        path.move_to((x, y))
+                    } else if i % 3 == 0 {
+                        path.close_path()
+                    } else {
+                        path.line_to((x, y))
+                    }
                 }
                 Node::Fill(Fill { transform, path, rule: FillRule::EvenOdd, paint: Paint::Solid(Rgba8::new(1, 2, 3, 200)) })
             }),

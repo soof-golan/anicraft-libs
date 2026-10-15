@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use anim_core::num::{round_f64_to_i64, i64_to_f64};
+use anim_core::num::{i64_to_f64, round_f64_to_i64};
 use anim_render::straight_rgba;
 use serde::{Deserialize, Serialize};
 
@@ -70,21 +70,11 @@ pub fn frame_delays_cs(count: u32, fps: f64, min_delay_cs: u16) -> Result<Vec<u1
 ///
 /// # Errors
 /// Render, range or encoding errors, or [`ExportError::Cancelled`].
-pub fn export_gif<W: Write>(
-    source: &dyn FrameSource,
-    writer: W,
-    options: &GifOptions,
-    progress: &mut dyn FnMut(Progress) -> bool,
-) -> Result<ExportReport> {
+pub fn export_gif<W: Write>(source: &dyn FrameSource, writer: W, options: &GifOptions, progress: &mut dyn FnMut(Progress) -> bool) -> Result<ExportReport> {
     write_gif(source, writer, options, progress).map(|(_, report)| report)
 }
 
-fn write_gif<W: Write>(
-    source: &dyn FrameSource,
-    writer: W,
-    options: &GifOptions,
-    progress: &mut dyn FnMut(Progress) -> bool,
-) -> Result<(W, ExportReport)> {
+fn write_gif<W: Write>(source: &dyn FrameSource, writer: W, options: &GifOptions, progress: &mut dyn FnMut(Progress) -> bool) -> Result<(W, ExportReport)> {
     let range = options.raster.resolve_range(source.frame_count())?;
     let total = range.end.saturating_sub(range.start);
     let (width, height) = options.raster.output_size(source.size())?;
@@ -127,12 +117,7 @@ fn write_gif<W: Write>(
 ///
 /// # Errors
 /// As [`export_gif`], plus i/o errors creating the file.
-pub fn export_gif_file(
-    source: &dyn FrameSource,
-    path: &Path,
-    options: &GifOptions,
-    progress: &mut dyn FnMut(Progress) -> bool,
-) -> Result<ExportReport> {
+pub fn export_gif_file(source: &dyn FrameSource, path: &Path, options: &GifOptions, progress: &mut dyn FnMut(Progress) -> bool) -> Result<ExportReport> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }

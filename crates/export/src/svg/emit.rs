@@ -391,15 +391,7 @@ impl<'a> Emitter<'a> {
             let (Some(d0), Some(d1), Some(d2)) = (get(&m.target, i0), get(&m.target, i1), get(&m.target, i2)) else { continue };
             let Some(map) = triangle_affine([s0, s1, s2], [d0, d1, d2]) else { continue };
             let p = self.p();
-            let outline = format!(
-                " M{} {} L{} {} L{} {} Z",
-                num(d0.x, p),
-                num(d0.y, p),
-                num(d1.x, p),
-                num(d1.y, p),
-                num(d2.x, p),
-                num(d2.y, p)
-            );
+            let outline = format!(" M{} {} L{} {} L{} {} Z", num(d0.x, p), num(d0.y, p), num(d1.x, p), num(d1.y, p), num(d2.x, p), num(d2.y, p));
             let clip = self.define("t", "clipPath", &format!("><path d=\"{}\"/>", outline.trim()));
             let _ = writeln!(
                 tris,

@@ -129,12 +129,7 @@ fn png_sequence_names_are_zero_padded_and_pixels_move() {
 fn png_sequence_range_and_numbering() {
     let dir = tempfile::tempdir().unwrap();
     let src = moving_square(12);
-    let opts = PngSequenceOptions {
-        raster: RasterOptions::default().with_frames(8..20),
-        prefix: "f".to_owned(),
-        start_number: 100,
-        min_digits: 1,
-    };
+    let opts = PngSequenceOptions { raster: RasterOptions::default().with_frames(8..20), prefix: "f".to_owned(), start_number: 100, min_digits: 1 };
     let report = export_png_sequence(&src, dir.path(), &opts, &mut no_progress).unwrap();
     assert_eq!(report.frames, 4);
     let first = report.files.first().unwrap().file_name().unwrap().to_string_lossy().into_owned();
@@ -221,10 +216,7 @@ fn gif_loop_modes_and_transparency() {
     export_gif(&src, &mut bytes, &finite, &mut no_progress).unwrap();
     assert!(matches!(decode_gif(&bytes).0, gif::Repeat::Finite(3)));
 
-    let transparent = GifOptions {
-        raster: RasterOptions::default().with_background(ExportBackground::Transparent),
-        ..GifOptions::default()
-    };
+    let transparent = GifOptions { raster: RasterOptions::default().with_background(ExportBackground::Transparent), ..GifOptions::default() };
     let mut bytes = Vec::new();
     export_gif(&src, &mut bytes, &transparent, &mut no_progress).unwrap();
     let (_, _, _, frames) = decode_gif(&bytes);
@@ -335,12 +327,8 @@ fn sprite_sheet_max_rects_trims_and_round_trips_json() {
 #[test]
 fn sprite_sheet_trims_transparent_borders() {
     let src = moving_square(4);
-    let opts = SheetOptions {
-        raster: RasterOptions::default().with_background(ExportBackground::Transparent),
-        trim: true,
-        padding: 0,
-        ..SheetOptions::default()
-    };
+    let opts =
+        SheetOptions { raster: RasterOptions::default().with_background(ExportBackground::Transparent), trim: true, padding: 0, ..SheetOptions::default() };
     let sheet = build_sprite_sheet(&src, &opts, &mut no_progress).unwrap();
     for (name, f) in &sheet.metadata.frames {
         assert!(f.trimmed, "{name}");

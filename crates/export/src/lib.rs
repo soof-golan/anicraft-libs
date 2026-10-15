@@ -34,4 +34,6 @@ pub use progress::{Progress, ProgressFn, Stage, no_progress};
 pub use raster::{ExportBackground, RasterOptions, RgbaFrame, render_frame};
 pub use sheet::{PxRect, PxSize, SheetFrame, SheetLayout, SheetMeta, SheetMetadata, SheetOptions, SpriteSheet, build_sprite_sheet, export_sprite_sheet};
 pub use source::{FrameSource, VecFrameSource};
-pub use svg::{AnimatedSvgOptions, SvgAnimation, SvgOptions, display_list_to_svg, export_animated_svg, export_animated_svg_file, export_svg_file, frame_to_svg};
+pub use svg::{
+    AnimatedSvgOptions, SvgAnimation, SvgOptions, display_list_to_svg, export_animated_svg, export_animated_svg_file, export_svg_file, frame_to_svg,
+};

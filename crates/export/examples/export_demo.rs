@@ -22,12 +22,10 @@
 use std::path::PathBuf;
 
 use anim_core::{Affine, BezPath, BlendMode, ColorTransform, Rgba8, Size};
-use anim_display::{
-    DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, ImageStore, Interpolation, Node, Paint, Spread, Stroke, StrokeStyle,
-};
+use anim_display::{DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, ImageStore, Interpolation, Node, Paint, Spread, Stroke, StrokeStyle};
 use anim_export::{
-    AnimatedSvgOptions, FrameSource, GifOptions, PngSequenceOptions, RasterOptions, SheetOptions, SvgAnimation, SvgOptions, VecFrameSource, export_animated_svg_file,
-    export_gif_file, export_png_sequence, export_sprite_sheet, export_svg_file, no_progress,
+    AnimatedSvgOptions, FrameSource, GifOptions, PngSequenceOptions, RasterOptions, SheetOptions, SvgAnimation, SvgOptions, VecFrameSource,
+    export_animated_svg_file, export_gif_file, export_png_sequence, export_sprite_sheet, export_svg_file, no_progress,
 };
 
 fn circle(r: f64) -> BezPath {
@@ -142,10 +140,11 @@ fn main() {
     let source = VecFrameSource::new(Size::new(320.0, 180.0), 24.0, (0..count).map(|i| frame(i, count)).collect(), ImageStore::new());
     let raster = RasterOptions::default().with_scale(2.0);
 
-    let png = export_png_sequence(&source, &out.join("png"), &PngSequenceOptions { raster,..PngSequenceOptions::default() }, &mut no_progress).unwrap();
+    let png = export_png_sequence(&source, &out.join("png"), &PngSequenceOptions { raster, ..PngSequenceOptions::default() }, &mut no_progress).unwrap();
     println!("png sequence: {} files, {} bytes", png.files.len(), png.bytes);
 
-    let gif = export_gif_file(&source, &out.join("demo.gif"), &GifOptions { raster: RasterOptions::default(), ..GifOptions::default() }, &mut no_progress).unwrap();
+    let gif =
+        export_gif_file(&source, &out.join("demo.gif"), &GifOptions { raster: RasterOptions::default(), ..GifOptions::default() }, &mut no_progress).unwrap();
     println!("gif: {} frames, {} bytes", gif.frames, gif.bytes);
 
     let sheet_opts = SheetOptions { raster: RasterOptions::default().with_scale(0.5), padding: 2, ..SheetOptions::default() };

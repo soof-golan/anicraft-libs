@@ -3,8 +3,8 @@
 
 use anim_core::{Affine, BezPath, BlendMode, ColorTransform, Point, Rgba8, Size};
 use anim_display::{
-    Bitmap, Cap, DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Join, Mesh, Node, Paint, Spread,
-    Stroke, StrokeScale, StrokeStyle,
+    Bitmap, Cap, DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Join, Mesh, Node, Paint, Spread, Stroke,
+    StrokeScale, StrokeStyle,
 };
 use anim_export::VecFrameSource;
 
@@ -97,7 +97,17 @@ pub fn kitchen_sink() -> (DisplayList, ImageStore) {
         mask: Some(vec![solid_rect(0.0, 0.0, 60.0, 30.0, WHITE)]),
         filters: vec![
             Filter::Blur { x: 2.0, y: 2.0, quality: 2 },
-            Filter::DropShadow { color: Rgba8::new(0, 0, 0, 160), angle_deg: 45.0, distance: 4.0, blur_x: 4.0, blur_y: 4.0, strength: 1.5, inner: false, knockout: false, hide_object: false },
+            Filter::DropShadow {
+                color: Rgba8::new(0, 0, 0, 160),
+                angle_deg: 45.0,
+                distance: 4.0,
+                blur_x: 4.0,
+                blur_y: 4.0,
+                strength: 1.5,
+                inner: false,
+                knockout: false,
+                hide_object: false,
+            },
             Filter::Glow { color: Rgba8::new(255, 255, 0, 255), blur_x: 3.0, blur_y: 3.0, strength: 1.0, inner: true, knockout: false },
             Filter::ColorMatrix([1.0, 0.0, 0.0, 0.0, 10.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
         ],

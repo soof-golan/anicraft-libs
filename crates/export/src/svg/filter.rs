@@ -179,17 +179,7 @@ pub(super) fn build(filters: &[Filter], ct: Option<&ColorTransform>, precision: 
         let [mr, mg, mb, ma] = ct.mul;
         let [ar, ag, ab, aa] = ct.add;
         let f = |v: f32| num(f64::from(v), 5);
-        let values = format!(
-            "{} 0 0 0 {} 0 {} 0 0 {} 0 0 {} 0 {} 0 0 0 {} {}",
-            f(mr),
-            f(ar),
-            f(mg),
-            f(ag),
-            f(mb),
-            f(ab),
-            f(ma),
-            f(aa)
-        );
+        let values = format!("{} 0 0 0 {} 0 {} 0 0 {} 0 0 {} 0 {} 0 0 0 {} {}", f(mr), f(ar), f(mg), f(ag), f(mb), f(ab), f(ma), f(aa));
         b.color_matrix(&values);
     }
     if b.body.is_empty() { None } else { Some(FilterChain { body: b.body, pad: b.pad }) }

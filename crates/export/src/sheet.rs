@@ -208,11 +208,8 @@ impl MaxRects {
             }
         }
         // Drop free rectangles that lie inside another one.
-        let keep: Vec<bool> = next
-            .iter()
-            .enumerate()
-            .map(|(i, a)| !next.iter().enumerate().any(|(j, b)| i != j && b.contains(*a) && (!a.contains(*b) || j < i)))
-            .collect();
+        let keep: Vec<bool> =
+            next.iter().enumerate().map(|(i, a)| !next.iter().enumerate().any(|(j, b)| i != j && b.contains(*a) && (!a.contains(*b) || j < i))).collect();
         self.free = next.into_iter().zip(keep).filter_map(|(r, k)| k.then_some(r)).collect();
         Some(placed)
     }
@@ -293,12 +290,7 @@ fn pack_grid(sizes: &[(u32, u32)], columns: Option<u32>, padding: u32, max_size:
             .map(|(i, &(sw, sh))| {
                 let i = u32::try_from(i).unwrap_or(u32::MAX);
                 let (col, row) = (i.checked_rem(cols).unwrap_or(0), i.checked_div(cols).unwrap_or(0));
-                Slot {
-                    x: col.saturating_mul(cell_w.saturating_add(padding)),
-                    y: row.saturating_mul(cell_h.saturating_add(padding)),
-                    w: sw,
-                    h: sh,
-                }
+                Slot { x: col.saturating_mul(cell_w.saturating_add(padding)), y: row.saturating_mul(cell_h.saturating_add(padding)), w: sw, h: sh }
             })
             .collect(),
     )
@@ -362,11 +354,7 @@ fn blit(dst: &mut RgbaFrame, src: &RgbaFrame, x: u32, y: u32) {
 /// # Errors
 /// Render and range errors, [`ExportError::SheetTooSmall`] when the frames do not fit `max_size`, or
 /// [`ExportError::Cancelled`].
-pub fn build_sprite_sheet(
-    source: &dyn FrameSource,
-    options: &SheetOptions,
-    progress: &mut dyn FnMut(Progress) -> bool,
-) -> Result<SpriteSheet> {
+pub fn build_sprite_sheet(source: &dyn FrameSource, options: &SheetOptions, progress: &mut dyn FnMut(Progress) -> bool) -> Result<SpriteSheet> {
     check_prefix(&options.prefix)?;
     if options.max_size == 0 || options.max_size > anim_render::MAX_DIMENSION {
         return Err(ExportError::InvalidSetting(format!("max_size {} must be between 1 and {}", options.max_size, anim_render::MAX_DIMENSION)));
@@ -474,5 +462,9 @@ pub fn export_sprite_sheet(
     fs::write(png_path, &png)?;
     fs::write(json_path, json.as_bytes())?;
     let bytes = u64::try_from(png.len()).unwrap_or(u64::MAX).saturating_add(u64::try_from(json.len()).unwrap_or(u64::MAX));
-    Ok(ExportReport { frames: u32::try_from(sheet.metadata.frames.len()).unwrap_or(u32::MAX), files: vec![png_path.to_path_buf(), json_path.to_path_buf()], bytes })
+    Ok(ExportReport {
+        frames: u32::try_from(sheet.metadata.frames.len()).unwrap_or(u32::MAX),
+        files: vec![png_path.to_path_buf(), json_path.to_path_buf()],
+        bytes,
+    })
 }
