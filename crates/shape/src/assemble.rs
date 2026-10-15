@@ -575,6 +575,24 @@ mod tests {
     }
 
     #[test]
+    fn merged_cubics_assemble_as_cubic_curves() {
+        use crate::edges::XflEdge;
+        let outline = "!848 67[835 165 1052 184!1052 184[1134 190 1175 174!1175 174[1220 153 1177 116!1177 116[1085 42 987 12!987 12[858 -29 848 67";
+        let first = "!848 67(;829,206 1302,223 1177,116q848 67Q835 165q1052 184Q1134 190q1175 174Q1220 153q1177 116);";
+        let second = "!1177 116(;1091,47 864,-78 848,67q1177 116Q1085 42q987 12Q858 -29q848 67);";
+        let xfl = vec![
+            XflEdge { fill_style0: 0, fill_style1: 1, stroke_style: 0, edges: Some(outline.to_owned()), cubics: None },
+            XflEdge { cubics: Some(first.to_owned()), ..XflEdge::default() },
+            XflEdge { cubics: Some(second.to_owned()), ..XflEdge::default() },
+        ];
+        let s = EdgeShape::from_xfl(vec![FillStyle::default()], vec![], &xfl).unwrap();
+        let region = s.assemble().fills.into_iter().next().unwrap();
+        let curves = region.path.elements().iter().filter(|e| matches!(e, anim_core::kurbo::PathEl::CurveTo(..))).count();
+        let quads = region.path.elements().iter().filter(|e| matches!(e, anim_core::kurbo::PathEl::QuadTo(..))).count();
+        assert_eq!((curves, quads), (2, 0));
+    }
+
+    #[test]
     fn regions_and_runs_split_into_their_contours() {
         let outer = edge(0, 1, 1, "!0 0|400 0|400 400|0 400|0 0");
         let hole = edge(0, 1, 0, "!100 100|100 300|300 300|300 100|100 100");
