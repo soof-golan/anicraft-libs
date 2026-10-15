@@ -144,6 +144,13 @@ impl Backend {
         Self { tx, origin: origin.into(), description: description.into() }
     }
 
+    /// The same backend, labelling its calls `origin` in the journal.
+    #[must_use]
+    pub fn with_origin(mut self, origin: impl Into<String>) -> Self {
+        self.origin = origin.into();
+        self
+    }
+
     /// What this backend is, for status output.
     #[must_use]
     pub fn description(&self) -> &str {

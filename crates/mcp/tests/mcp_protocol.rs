@@ -456,7 +456,7 @@ async fn every_call_is_journaled() {
     assert!(requests.iter().any(|r| r.starts_with("render.frame")));
     let failed = entries.iter().find(|e| e["request"] == "command.run layer_fail").unwrap();
     assert_eq!(failed["outcome"], "error");
-    assert!(entries.iter().all(|e| e["origin"] == "headless"));
+    assert!(entries.iter().all(|e| e["origin"] == "mcp"));
     assert!(entries.windows(2).all(|w| w[0]["seq"].as_u64() < w[1]["seq"].as_u64()));
 }
 

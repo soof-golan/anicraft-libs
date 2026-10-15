@@ -108,7 +108,7 @@ impl AnimMcp {
     #[must_use]
     pub fn new(backend: Backend, name: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
-            backend,
+            backend: backend.with_origin("mcp"),
             name: name.into(),
             version: version.into(),
             instructions: "This server drives an animation editor. Call session_status first, then list_commands or inspect_document. Every \

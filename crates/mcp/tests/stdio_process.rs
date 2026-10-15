@@ -127,7 +127,7 @@ async fn in_process_mode_serves_mcp_while_the_ui_thread_owns_the_session() {
     let status = client.call_tool("session_status", json!({})).await;
     assert_eq!(status["structuredContent"]["undo_steps"], 1);
     let journal = client.call_tool("journal", json!({})).await;
-    assert!(journal["structuredContent"]["entries"].as_array().unwrap().iter().all(|e| e["origin"] == "in-process"));
+    assert!(journal["structuredContent"]["entries"].as_array().unwrap().iter().all(|e| e["origin"] == "mcp"));
     drop(stop_tx);
     ui.join().unwrap();
 }
