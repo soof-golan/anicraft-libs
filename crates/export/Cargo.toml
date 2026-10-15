@@ -1,0 +1,27 @@
+[package]
+name = "anim-export"
+description = "Image-based exports of display lists: PNG sequences, animated GIF, sprite sheets, static and animated SVG, with progress and cancel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+anim-display = { workspace = true }
+anim-render = { workspace = true }
+base64 = { workspace = true }
+gif = { workspace = true }
+png = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+roxmltree = { workspace = true }
+tempfile = { workspace = true }
