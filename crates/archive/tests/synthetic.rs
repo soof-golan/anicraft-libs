@@ -358,6 +358,37 @@ fn a_self_extracting_prefix_and_an_archive_comment_are_tolerated() {
 }
 
 #[test]
+fn an_end_record_count_that_is_too_small_does_not_hide_entries() {
+    // Writers unaware of Zip64 wrap the 16-bit entry count; readers that trust it silently lose entries.
+    let mut bytes = RawZip::new(sample_entries()).build();
+    let end = bytes.len() - 22;
+    bytes.get_mut(end + 8..end + 12).unwrap().copy_from_slice(&[2, 0, 2, 0]);
+    let container = Container::from_bytes(bytes).unwrap();
+    assert_sample_contents(&container);
+    assert!(container.warnings().iter().any(|w| w.contains("central directory lists 5")), "{:?}", container.warnings());
+}
+
+#[test]
+fn containers_are_shareable_between_threads() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Container>();
+    assert_send_sync::<anim_archive::Entry>();
+    assert_send_sync::<ArchiveError>();
+}
+
+#[test]
+fn legacy_binary_documents_get_a_helpful_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("old.fla");
+    let mut header = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    header.resize(2048, 0);
+    std::fs::write(&path, header).unwrap();
+    let error = Container::open(&path).unwrap_err();
+    assert!(matches!(error, ArchiveError::NotAnArchive(_)));
+    assert!(error.to_string().contains("legacy binary document"), "{error}");
+}
+
+#[test]
 fn an_empty_zip_is_an_empty_container() {
     let bytes = ZipWriter::in_memory().finish().unwrap();
     let container = Container::from_bytes(bytes).unwrap();
