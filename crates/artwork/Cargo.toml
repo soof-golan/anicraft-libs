@@ -1,0 +1,30 @@
+[package]
+name = "anim-artwork"
+description = "Layered artwork import (PSD/PSB, AI/PDF, SVG) into a neutral layer tree with exact names, for puppets and Animate import"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+anim-display = { workspace = true }
+photocraft-psd = { workspace = true }
+vectorcraft-pdf = { workspace = true }
+vectorcraft-eps = { workspace = true }
+vectorcraft-doc = { workspace = true }
+vectorcraft-color = { workspace = true }
+vectorcraft-geom = { workspace = true }
+usvg = { workspace = true }
+image = { workspace = true, features = ["jpeg", "gif", "webp"] }
+kurbo = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+photocraft-psd = { workspace = true, features = ["testgen"] }
+proptest = { workspace = true }

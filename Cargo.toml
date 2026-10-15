@@ -12,6 +12,7 @@ repository = "https://github.com/soof-golan/anicraft-libs"
 [workspace.dependencies]
 # Internal crates (see ARCHITECTURE.md for what each one owns).
 anim-archive = { path = "crates/archive" }
+anim-artwork = { path = "crates/artwork" }
 anim-core = { path = "crates/core" }
 anim-display = { path = "crates/display" }
 anim-render = { path = "crates/render" }
@@ -27,6 +28,13 @@ craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb
 craft-settings = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
 craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
 photocraft-psd = { git = "https://github.com/storytold/photocraft", rev = "c11ef015b7640b4dad43bf775373fd345902e382" }
+# AI/PDF import (layers, sublayers, paths, gradients) goes through VectorCraft's importers.
+vectorcraft-pdf = { git = "https://github.com/storytold/vectorcraft", rev = "ed96a1219620b5b6ab13e25369f7b55cddd664f6" }
+vectorcraft-eps = { git = "https://github.com/storytold/vectorcraft", rev = "ed96a1219620b5b6ab13e25369f7b55cddd664f6" }
+vectorcraft-doc = { git = "https://github.com/storytold/vectorcraft", rev = "ed96a1219620b5b6ab13e25369f7b55cddd664f6" }
+vectorcraft-color = { git = "https://github.com/storytold/vectorcraft", rev = "ed96a1219620b5b6ab13e25369f7b55cddd664f6" }
+vectorcraft-geom = { git = "https://github.com/storytold/vectorcraft", rev = "ed96a1219620b5b6ab13e25369f7b55cddd664f6" }
+usvg = { version = "0.48", default-features = false, features = ["text", "svgz", "system-fonts"] }
 
 # External crates (versions match the Craft apps' lockfiles where they overlap).
 kurbo = { version = "0.13", features = ["serde"] }
@@ -87,3 +95,10 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# VectorCraft's PDF importer needs the Craft forks of hayro and krilla (same rev as its own root manifest).
+[patch.crates-io]
+hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
