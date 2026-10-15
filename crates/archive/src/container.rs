@@ -5,11 +5,11 @@ use crate::encoding::decode_name;
 use crate::entry::{CompressionMethod, DosDateTime, Entry, Location};
 use crate::error::{ArchiveError, Result};
 use crate::limits::Limits;
-use crate::names::{lookup_key, normalize_name};
+use crate::lookup::NameIndex;
+use crate::names::normalize_name;
 use crate::writer::{ArchiveWriter, NewEntry};
 use crate::zip_index::{self, IndexSource, RawEntry, ReadSeek};
 use crate::zip_read;
-use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -48,9 +48,7 @@ pub struct Container {
     source: Source,
     index_source: IndexSource,
     entries: Vec<Entry>,
-    exact: HashMap<String, usize>,
-    folded: HashMap<String, usize>,
-    dirs: HashSet<String>,
+    names: NameIndex,
     warnings: Vec<String>,
     limits: Limits,
 }
@@ -100,18 +98,7 @@ impl Container {
     pub fn open_folder(path: impl AsRef<Path>, limits: Limits) -> Result<Self> {
         let path = path.as_ref();
         let (entries, warnings) = dir::walk(path, &limits)?;
-        let mut container = Self {
-            source: Source::Folder(path.to_path_buf()),
-            index_source: IndexSource::Folder,
-            entries: Vec::new(),
-            exact: HashMap::new(),
-            folded: HashMap::new(),
-            dirs: HashSet::new(),
-            warnings,
-            limits,
-        };
-        container.set_entries(entries);
-        Ok(container)
+        Ok(Self { source: Source::Folder(path.to_path_buf()), index_source: IndexSource::Folder, names: NameIndex::build(&entries), entries, warnings, limits })
     }
 
     /// Opens a zip held in memory (embedded resources, network downloads, tests).
@@ -145,43 +132,7 @@ impl Container {
         };
         let mut warnings = index.warnings;
         let entries = finalize_zip_entries(index.entries, len, &limits, &mut warnings)?;
-        let mut container = Self {
-            source,
-            index_source: index.source,
-            entries: Vec::new(),
-            exact: HashMap::new(),
-            folded: HashMap::new(),
-            dirs: HashSet::new(),
-            warnings,
-            limits,
-        };
-        container.set_entries(entries);
-        Ok(container)
-    }
-
-    fn set_entries(&mut self, entries: Vec<Entry>) {
-        self.entries = entries;
-        self.exact.clear();
-        self.folded.clear();
-        self.dirs.clear();
-        for (index, entry) in self.entries.iter().enumerate() {
-            // Later entries replace earlier ones with the same name, as zip readers conventionally do.
-            self.exact.insert(entry.name.clone(), index);
-            self.folded.insert(lookup_key(&entry.name), index);
-            let mut prefix = String::new();
-            let path = entry.path();
-            let parent_count = path.split('/').count().saturating_sub(1);
-            for part in path.split('/').take(parent_count) {
-                if !prefix.is_empty() {
-                    prefix.push('/');
-                }
-                prefix.push_str(part);
-                self.dirs.insert(lookup_key(&prefix));
-            }
-            if entry.is_dir {
-                self.dirs.insert(lookup_key(path));
-            }
-        }
+        Ok(Self { source, index_source: index.source, names: NameIndex::build(&entries), entries, warnings, limits })
     }
 
     /// Whether this is a zip or a folder.
@@ -234,14 +185,7 @@ impl Container {
 
     /// File entries below the directory `dir` at any depth (`""` means everything), matched case-insensitively.
     pub fn files_under<'a>(&'a self, dir: &str) -> impl Iterator<Item = &'a Entry> + 'a {
-        let prefix = lookup_key(dir);
-        self.files().filter(move |e| {
-            if prefix.is_empty() {
-                return true;
-            }
-            let key = lookup_key(&e.name);
-            key.strip_prefix(prefix.as_str()).is_some_and(|rest| rest.starts_with('/'))
-        })
+        self.names.below(dir).filter_map(|position| self.entries.get(position)).filter(|entry| !entry.is_dir)
     }
 
     /// Number of entries.
@@ -260,23 +204,14 @@ impl Container {
     /// Animate's `&#NNN` file-name escapes and Unicode normalisation form. A name for a directory may omit the `/`.
     #[must_use]
     pub fn find(&self, name: &str) -> Option<&Entry> {
-        let normal = normalize_name(name);
-        if let Some(index) = self.exact.get(&normal) {
-            return self.entries.get(*index);
-        }
-        let with_slash = format!("{}/", normal.trim_end_matches('/'));
-        if let Some(index) = self.exact.get(&with_slash) {
-            return self.entries.get(*index);
-        }
-        let key = lookup_key(name);
-        self.folded.get(&key).and_then(|index| self.entries.get(*index))
+        self.names.find(name).and_then(|position| self.entries.get(position))
     }
 
     /// True when `name` is an entry or a directory implied by the entries below it (zips often omit directory
     /// entries). Lookup is as lenient as [`Container::find`].
     #[must_use]
     pub fn exists(&self, name: &str) -> bool {
-        self.find(name).is_some() || self.dirs.contains(&lookup_key(name))
+        self.find(name).is_some() || self.names.is_dir(name)
     }
 
     /// Reads and verifies the bytes of the entry called `name`.

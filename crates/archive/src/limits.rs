@@ -38,7 +38,7 @@ impl Default for Limits {
             max_ratio: 1100,
             ratio_min_size: MIB,
             max_dir_depth: 64,
-            max_name_len: 65_535,
+            max_name_len: 4096,
         }
     }
 }

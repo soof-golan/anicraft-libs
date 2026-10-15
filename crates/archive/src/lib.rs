@@ -57,6 +57,7 @@ pub mod encoding;
 mod entry;
 mod error;
 mod limits;
+mod lookup;
 pub mod names;
 mod writer;
 mod zip_index;
