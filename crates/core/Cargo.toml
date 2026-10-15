@@ -1,0 +1,21 @@
+[package]
+name = "anim-core"
+description = "Shared primitives for the AniCraft family: time, colour, colour transforms, blend modes, checked numeric conversions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+filmcraft-time = { workspace = true }
+kurbo = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
