@@ -1,0 +1,27 @@
+[package]
+name = "anim-text"
+description = "Rich text layout with right-to-left and bidi support: runs to positioned glyph outlines, system font fallback, caret and selection geometry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+anim-display = { workspace = true }
+fontique = { workspace = true }
+icu_properties = { workspace = true }
+# `complex-scripts` adds the dictionaries that break Thai, Lao, Khmer, Burmese and CJK text into words (about 4 MB of data).
+parley = { workspace = true, features = ["complex-scripts"] }
+parley_data = { workspace = true }
+serde = { workspace = true }
+skrifa = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
