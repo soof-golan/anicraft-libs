@@ -10,6 +10,14 @@ use crate::front::AnimMcp;
 #[error("{0}")]
 pub struct ServeError(String);
 
+impl ServeError {
+    /// An error with this message.
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
+
 /// Serves MCP over any async byte stream pair (an in-memory duplex in tests, a socket, stdio) until the peer
 /// disconnects.
 ///

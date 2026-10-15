@@ -24,6 +24,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+axum = { workspace = true, optional = true }
+
+[features]
+default = ["http"]
+# MCP over streamable HTTP on 127.0.0.1 (bearer token), for clients that cannot spawn a stdio process.
+http = ["rmcp/transport-streamable-http-server", "dep:axum"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

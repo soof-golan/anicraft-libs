@@ -47,6 +47,7 @@ releases, the way the Craft apps pin `craft-libs`.
 | `anim-video` | MP4 (H.264 + AAC) and MOV (ProRes 4444 with alpha) encoding with filmcraft's pure-Rust codecs; an actor that accepts frames and audio and reports progress | filmcraft-h264enc/isobmff/aac/prores |
 | `anim-ui` | Shared egui widgets: stage view (pan/zoom/rulers/guides, texture upload), timeline grid (layers, frames, keyframes, tweens, playhead, onion skin), layer list, property inspector, library browser, transport bar, docking via craft-ui, theme | egui, craft-ui |
 | `anim-session` | App framework: command registry (`id`, label, menu, shortcut, `run(&mut Doc, params) -> Result`), snapshot undo/redo with merge keys, background jobs as actors with progress/cancel, settings (craft-settings), atomic save (craft-atomic), recent files | craft-settings, craft-atomic |
+| `anim-mcp` | MCP (Model Context Protocol) for both apps, see `docs/mcp.md`: control protocol (requests, replies with images, structured errors), `SessionHost` (commands, atomic batches, properties, queries, render, screenshot, export, open/save, path confinement, call journal), headless actor backend, bridge backend and `ControlServer` (loopback JSON lines + token) for running apps, rmcp front-end (tools generated from the command registry, resources, prompts, progress, cancellation), `anim-mcp` stdio bridge binary | anim-session, rmcp, tokio, schemars |
 
 ### What `anim-render` guarantees producers and exporters
 

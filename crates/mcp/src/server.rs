@@ -155,8 +155,11 @@ impl Drop for ControlServer {
     }
 }
 
-/// 32 random bytes as hex.
-fn generate_token() -> io::Result<String> {
+/// A fresh random secret: 32 random bytes as 64 hex digits.
+///
+/// # Errors
+/// Fails when the system has no random number source.
+pub fn generate_token() -> io::Result<String> {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| io::Error::other(format!("no random numbers available: {e}")))?;
     let mut token = String::with_capacity(64);
@@ -166,7 +169,11 @@ fn generate_token() -> io::Result<String> {
     Ok(token)
 }
 
-fn write_token_file(path: &Path, token: &str, addr: SocketAddr) -> io::Result<()> {
+/// Writes `token` and `addr` to `path`, readable by the owner only on Unix.
+///
+/// # Errors
+/// I/O errors creating or writing the file.
+pub fn write_token_file(path: &Path, token: &str, addr: SocketAddr) -> io::Result<()> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]

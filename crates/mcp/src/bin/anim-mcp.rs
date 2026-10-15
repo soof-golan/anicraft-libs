@@ -34,6 +34,30 @@ struct Args {
     /// Server name announced to the MCP client.
     #[arg(long, default_value = "anim-mcp")]
     name: String,
+
+    /// Serve streamable HTTP on 127.0.0.1:PORT (0 picks a free port) instead of stdio. Clients send `Authorization: Bearer <token>`.
+    #[cfg(feature = "http")]
+    #[arg(long, value_name = "PORT", requires = "http_token_file")]
+    http: Option<u16>,
+
+    /// Where `--http` writes its bearer token and address (the same format as the app's token file).
+    #[cfg(feature = "http")]
+    #[arg(long, value_name = "FILE")]
+    http_token_file: Option<PathBuf>,
+}
+
+#[cfg(feature = "http")]
+fn serve_http_blocking(server: AnimMcp, port: u16, token_file: &std::path::Path) -> Result<()> {
+    use anim_mcp::http::{HttpListener, serve_http};
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().wrap_err("could not start the async runtime")?;
+    runtime.block_on(async {
+        let listener = HttpListener::bind(port).await?;
+        let token = anim_mcp::generate_token()?;
+        anim_mcp::write_token_file(token_file, &token, listener.addr()).wrap_err_with(|| format!("could not write {}", token_file.display()))?;
+        eprintln!("anim-mcp: MCP over HTTP at {} (bearer token in {})", listener.url(), token_file.display());
+        serve_http(server, listener, token, std::future::pending()).await?;
+        Ok(())
+    })
 }
 
 fn main() -> Result<()> {
@@ -44,8 +68,13 @@ fn main() -> Result<()> {
         (None, Some(addr), Some(token)) => connect_bridge(addr, token).wrap_err_with(|| format!("could not connect to {addr}"))?,
         _ => return Err(eyre!("give --token-file, or --addr together with --token (or ANIM_MCP_TOKEN)")),
     };
-    eprintln!("anim-mcp: connected to {}; serving MCP on stdio", backend.description());
+    eprintln!("anim-mcp: connected to {}", backend.description());
     let server = AnimMcp::new(backend, args.name, env!("CARGO_PKG_VERSION"));
+    #[cfg(feature = "http")]
+    if let (Some(port), Some(token_file)) = (args.http, &args.http_token_file) {
+        return serve_http_blocking(server, port, token_file);
+    }
+    eprintln!("anim-mcp: serving MCP on stdio");
     run_stdio(server)?;
     Ok(())
 }

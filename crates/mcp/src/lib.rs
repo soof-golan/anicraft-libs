@@ -41,6 +41,8 @@ pub mod front;
 pub mod headless;
 pub mod hooks;
 pub mod host;
+#[cfg(feature = "http")]
+pub mod http;
 pub mod journal;
 pub mod props;
 pub mod protocol;
@@ -59,4 +61,4 @@ pub use host::{ControlHost, HostInfo, SessionHost};
 pub use journal::{Journal, JournalEntry};
 pub use protocol::{BatchStep, CommandInfo, ControlError, ErrorKind, Event, Image, Progress, Reply, Request, encode_png_rgba};
 pub use serve::{ServeError, run_stdio, serve_io, serve_stdio};
-pub use server::{ControlConfig, ControlInbox, ControlServer, read_token_file};
+pub use server::{ControlConfig, ControlInbox, ControlServer, generate_token, read_token_file, write_token_file};
