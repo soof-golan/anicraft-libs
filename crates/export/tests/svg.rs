@@ -442,11 +442,11 @@ mod props {
                 let mut path = anim_core::BezPath::new();
                 for (i, (x, y)) in pts.into_iter().enumerate() {
                     if i == 0 {
-                        path.move_to((x, y))
+                        path.move_to((x, y));
                     } else if i % 3 == 0 {
-                        path.close_path()
+                        path.close_path();
                     } else {
-                        path.line_to((x, y))
+                        path.line_to((x, y));
                     }
                 }
                 Node::Fill(Fill { transform, path, rule: FillRule::EvenOdd, paint: Paint::Solid(Rgba8::new(1, 2, 3, 200)) })
