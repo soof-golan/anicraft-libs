@@ -172,9 +172,11 @@ fn progress_flows_back_and_cancel_reaches_the_app() {
     let mut seen = Vec::new();
     let done =
         backend.call_with_progress(Request::Export { format: "json".into(), path: out.to_str().unwrap().into(), options: Value::Null }, &mut seen).unwrap();
-    assert_eq!(done.value["path"], out.to_str().unwrap());
     assert!(seen.len() >= 5);
     assert!(out.exists());
+    // The app reports the canonical path, which differs from the temp path on macOS (/private) and Windows (\\?\, 8.3 names).
+    let reported = std::path::PathBuf::from(done.value["path"].as_str().unwrap());
+    assert_eq!(reported.canonicalize().unwrap(), out.canonicalize().unwrap());
 }
 
 #[test]
