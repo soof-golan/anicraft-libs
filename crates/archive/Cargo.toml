@@ -1,0 +1,23 @@
+[package]
+name = "anim-archive"
+description = "Robust containers for XFL folders, zipped FLA files, .puppet zips and Character Animator project folders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+crc32fast = { workspace = true }
+encoding_rs = { workspace = true }
+flate2 = { workspace = true }
+thiserror = { workspace = true }
+unicode-normalization = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }
