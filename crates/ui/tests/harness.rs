@@ -350,3 +350,45 @@ fn library_panel_filters_and_selects() {
     assert!(h.state().events.iter().any(|e| matches!(e, LibraryEvent::Select(_))), "{:?}", h.state().events);
     let _ = Rect::NOTHING;
 }
+
+#[test]
+fn frame_shortcuts_consume_function_keys() {
+    let mut h = Harness::builder()
+        .with_size(vec2(200.0, 100.0))
+        .build_ui_state(|ui, seen: &mut Vec<TimelineEvent>| seen.extend(anim_ui::timeline::frame_shortcuts(ui.ctx())), Vec::new());
+    h.run();
+    h.key_press(egui::Key::F6);
+    h.run();
+    h.key_press_modifiers(Modifiers::SHIFT, egui::Key::F5);
+    h.run();
+    h.key_press(egui::Key::F7);
+    h.run();
+    let seen = h.state();
+    assert!(seen.contains(&TimelineEvent::FrameAction(anim_ui::timeline::FrameAction::InsertKeyframe)), "{seen:?}");
+    assert!(seen.contains(&TimelineEvent::FrameAction(anim_ui::timeline::FrameAction::RemoveFrames)), "{seen:?}");
+    assert!(seen.contains(&TimelineEvent::FrameAction(anim_ui::timeline::FrameAction::InsertBlankKeyframe)), "{seen:?}");
+    assert!(!seen.contains(&TimelineEvent::FrameAction(anim_ui::timeline::FrameAction::InsertFrame)), "{seen:?}");
+}
+
+#[test]
+fn standalone_layers_list_reports_toggles() {
+    struct Rig {
+        model: TimelineModel,
+        events: Vec<LayerEvent>,
+        origin: Pos2,
+    }
+    let rig = Rig { model: model(), events: Vec::new(), origin: Pos2::ZERO };
+    let mut h = Harness::builder().with_size(vec2(300.0, 200.0)).build_ui_state(
+        |ui, rig: &mut Rig| {
+            rig.origin = ui.max_rect().min;
+            rig.events.extend(anim_ui::layers_list(ui, &rig.model, &TimelineViewState::default()));
+        },
+        rig,
+    );
+    h.run();
+    let o = h.state().origin;
+    let width = 300.0 - 16.0;
+    // First row sits below the 24 high header; the eye column is the third from the right.
+    click(&mut h, pos2(o.x + width - 24.0 * 3.0 + 12.0, o.y + 24.0 + 11.0 + 4.0));
+    assert!(h.state().events.contains(&LayerEvent::ToggleVisible(1)), "{:?}", h.state().events);
+}

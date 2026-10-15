@@ -131,6 +131,29 @@ pub fn show_dock(ui: &mut Ui, id: Id, layout: &Layout<PanelId>, title: impl Fn(P
     DockArea::new(id).show(ui, layout, &style, |panel| visual(&title(*panel)).into_owned(), |panel| panel.permissions(), body)
 }
 
+/// The panel a closed `panel` is reopened next to (its place in the default layout).
+#[must_use]
+pub const fn default_anchor(panel: PanelId) -> PanelId {
+    match panel {
+        PanelId::Tools | PanelId::Properties | PanelId::Library | PanelId::Custom(_) => PanelId::Properties,
+        PanelId::Stage => PanelId::Stage,
+        PanelId::Timeline | PanelId::Output => PanelId::Timeline,
+    }
+}
+
+/// Brings a closed panel back as a tab beside its default anchor (or, when that is gone too, beside the timeline or
+/// the properties panel).
+///
+/// Used by a Window menu: list [`PanelId`]s, show a check for [`Layout::contains`], and call this when an unchecked
+/// one is picked.
+///
+/// # Errors
+/// Returns the layout's refusal (for example when the panel is already open).
+pub fn open_panel(layout: &mut Layout<PanelId>, panel: PanelId) -> Result<(), DockError> {
+    let anchor = [default_anchor(panel), PanelId::Timeline, PanelId::Properties].into_iter().find(|a| *a != panel && layout.contains(a));
+    layout.apply_with_permissions(Action::Open { panel, anchor }, |p| p.permissions())
+}
+
 /// Applies the actions a dock frame produced, ignoring (and returning) the first that the layout refuses.
 pub fn apply_actions(layout: &mut Layout<PanelId>, actions: Vec<Action<PanelId>>) -> Option<DockError> {
     let mut first_error = None;
@@ -170,6 +193,21 @@ mod tests {
         assert_eq!(layout_or_default(Some("not json")), default_layout());
         assert_eq!(layout_or_default(Some("{\"root\":null,\"floating\":[{\"panels\":[],\"active\":0,\"rect\":[0,0,1,1]}]}")), default_layout());
         assert_eq!(layout_or_default(None), default_layout());
+    }
+
+    #[test]
+    fn closed_panels_reopen_beside_their_anchor() {
+        let mut layout = default_layout();
+        assert_eq!(apply_actions(&mut layout, vec![Action::Close { panel: PanelId::Library }]), None);
+        assert_eq!(open_panel(&mut layout, PanelId::Library), Ok(()));
+        assert!(layout.contains(&PanelId::Library));
+        assert_eq!(layout.validate(), Ok(()));
+        // Opening a panel that is already open just activates it: it never appears twice.
+        assert_eq!(open_panel(&mut layout, PanelId::Library), Ok(()));
+        assert_eq!(layout.panels().into_iter().filter(|p| **p == PanelId::Library).count(), 1);
+        // A panel the default layout never had opens too.
+        assert_eq!(open_panel(&mut layout, PanelId::Output), Ok(()));
+        assert!(layout.contains(&PanelId::Output));
     }
 
     #[test]

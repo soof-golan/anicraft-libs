@@ -23,7 +23,7 @@ impl Default for TransportState {
 }
 
 /// What the transport reports.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TransportEvent {
     Play,
     Pause,

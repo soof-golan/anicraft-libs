@@ -39,7 +39,7 @@ impl ToolItem {
 }
 
 /// What the toolbar reports.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolbarEvent {
     Select(String),
 }

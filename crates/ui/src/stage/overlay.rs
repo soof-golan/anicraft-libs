@@ -8,7 +8,7 @@ use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKi
 use super::view::{HandleId, StageView, transform_handles};
 
 /// How an outline is drawn.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OverlayStyle {
     pub color: Color32,
     pub width: f32,
@@ -38,7 +38,7 @@ impl OverlayStyle {
 }
 
 /// Shape of a point marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MarkerShape {
     Square,
     Circle,
@@ -46,7 +46,7 @@ pub enum MarkerShape {
 }
 
 /// One bezier path node: its position and optional control points (stage coordinates).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PathNode {
     pub pos: Pos2,
     pub control_in: Option<Pos2>,
@@ -63,7 +63,7 @@ impl PathNode {
 }
 
 /// A thing drawn over the stage.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Overlay {
     /// An axis-aligned rectangle.
     Rect { rect: Rect, style: OverlayStyle },

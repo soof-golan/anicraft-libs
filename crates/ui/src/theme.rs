@@ -88,7 +88,7 @@ impl Palette {
             grid_line: Color32::from_rgb(0xe2, 0xe2, 0xe5),
             grid_line_strong: Color32::from_rgb(0xd0, 0xd0, 0xd5),
             accent: Color32::from_rgb(0x1a, 0x73, 0xe8),
-            accent_soft: Color32::from_rgba_premultiplied(0x9c, 0xc3, 0xf5, 0xa0),
+            accent_soft: Color32::from_rgba_premultiplied(0x6e, 0xa2, 0xe8, 0xc8),
             playhead: Color32::from_rgb(0xd3, 0x2f, 0x2f),
             keyframe: Color32::from_rgb(0x20, 0x20, 0x24),
             span: Color32::from_rgb(0xcf, 0xcf, 0xd5),
@@ -241,6 +241,12 @@ mod tests {
         let shown = visual("שלום");
         assert_eq!(shown, "םולש");
         assert!(is_rtl("שלום"));
+    }
+
+    #[test]
+    fn hebrew_word_order_flips_with_the_paragraph() {
+        // Logical: "layer" then "background". Shown left to right: the second word first.
+        assert_eq!(visual("שכבת רקע"), "עקר תבכש");
     }
 
     #[test]

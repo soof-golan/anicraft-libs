@@ -41,7 +41,7 @@ impl LibraryKind {
 }
 
 /// One row of the library tree (listed in tree order, children after their folder).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LibraryItemView {
     pub id: u64,
     pub name: String,
@@ -54,7 +54,7 @@ pub struct LibraryItemView {
 }
 
 /// The library panel's input.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LibraryModel {
     pub items: Vec<LibraryItemView>,
     pub selected: Option<u64>,
@@ -63,7 +63,7 @@ pub struct LibraryModel {
 }
 
 /// Commands from the item context menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LibraryAction {
     Edit,
     Rename,
@@ -73,7 +73,7 @@ pub enum LibraryAction {
 }
 
 /// What the panel reports.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LibraryEvent {
     Select(u64),
     /// Double-click: open the item for editing (symbols) or playback (sounds).

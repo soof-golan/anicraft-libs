@@ -14,4 +14,4 @@ pub use geometry::{FrameSelection, Hit, MAX_FRAME_WIDTH, MIN_FRAME_WIDTH, Timeli
 pub use layers::{INDENT, LayerDrag, TOGGLE_WIDTH, layers_list};
 pub use model::{LayerId, LayerKind, LayerRow, OnionSkin, Span, TimelineModel, TweenKind, Waveform};
 pub use state::{DropPlacement, FrameAction, LayerEvent, TimelineEvent, TimelineViewState};
-pub use widget::{BAR_HEIGHT, RULER_HEIGHT, drag_delta, range_selection, ruler_label, ruler_label_step, timeline};
+pub use widget::{BAR_HEIGHT, RULER_HEIGHT, drag_delta, frame_shortcuts, range_selection, ruler_label, ruler_label_step, timeline};

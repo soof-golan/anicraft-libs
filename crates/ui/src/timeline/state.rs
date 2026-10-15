@@ -95,7 +95,7 @@ pub enum FrameAction {
 }
 
 /// Where a dragged layer lands relative to the row it is dropped on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DropPlacement {
     Before,
     After,
@@ -104,7 +104,7 @@ pub enum DropPlacement {
 }
 
 /// An interaction with the layer column.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LayerEvent {
     Select {
         id: LayerId,
@@ -136,7 +136,7 @@ pub enum LayerEvent {
 }
 
 /// Everything the timeline reports.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TimelineEvent {
     /// The playhead was scrubbed or a frame was clicked.
     SetFrame(u32),

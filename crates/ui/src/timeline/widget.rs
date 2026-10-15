@@ -43,6 +43,25 @@ pub fn ruler_label(frame: u32, step: u32) -> Option<String> {
     labelled.then(|| n.to_string())
 }
 
+/// Animate's frame keyboard shortcuts as events: F5 insert frame, Shift+F5 remove frames, F6 insert keyframe,
+/// Shift+F6 clear keyframe, F7 insert blank keyframe, Ctrl/Cmd+Alt+C/V copy and paste frames.
+///
+/// Call it once per frame where the timeline has focus (it consumes the keys it handles).
+#[must_use = "the keys are consumed: apply the returned events"]
+pub fn frame_shortcuts(ctx: &egui::Context) -> Vec<TimelineEvent> {
+    use egui::{Key, Modifiers};
+    let table = [
+        (Modifiers::SHIFT, Key::F5, FrameAction::RemoveFrames),
+        (Modifiers::SHIFT, Key::F6, FrameAction::ClearKeyframe),
+        (Modifiers::NONE, Key::F5, FrameAction::InsertFrame),
+        (Modifiers::NONE, Key::F6, FrameAction::InsertKeyframe),
+        (Modifiers::NONE, Key::F7, FrameAction::InsertBlankKeyframe),
+        (Modifiers::COMMAND | Modifiers::ALT, Key::C, FrameAction::CopyFrames),
+        (Modifiers::COMMAND | Modifiers::ALT, Key::V, FrameAction::PasteFrames),
+    ];
+    ctx.input_mut(|i| table.iter().filter(|(m, k, _)| i.consume_key(*m, *k)).map(|(_, _, a)| TimelineEvent::FrameAction(*a)).collect())
+}
+
 /// Selection spanning the visible rows `a_row..=b_row` and frames `a_frame..=b_frame` (in either order).
 #[must_use]
 pub fn range_selection(visible_ids: &[u64], a: (usize, u32), b: (usize, u32)) -> FrameSelection {

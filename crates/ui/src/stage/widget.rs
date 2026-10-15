@@ -39,7 +39,7 @@ pub enum WheelMode {
 }
 
 /// Everything [`stage_view`] draws and reacts to.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StageViewState {
     /// Distinguishes several stage views in one UI.
     pub id_salt: u64,
@@ -103,7 +103,7 @@ impl StageViewState {
 }
 
 /// Phase of a pointer event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PointerPhase {
     /// Hovering, no button down.
     Move,
@@ -119,7 +119,7 @@ pub enum PointerPhase {
 }
 
 /// A pointer event in stage coordinates.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StagePointer {
     pub phase: PointerPhase,
     pub button: PointerButton,
@@ -135,7 +135,7 @@ pub struct StagePointer {
 }
 
 /// What [`stage_view`] reports.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StageEvent {
     /// Pan or zoom changed (wheel, pinch, space-drag, fit): store the new view.
     ViewChanged(StageView),

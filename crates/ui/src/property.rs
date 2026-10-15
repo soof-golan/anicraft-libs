@@ -86,7 +86,7 @@ impl Property {
 }
 
 /// An edit made in the grid.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PropertyEdit {
     pub id: String,
     pub value: PropValue,
@@ -170,8 +170,19 @@ fn edit_row(ui: &mut Ui, prop: &Property, edits: &mut Vec<PropertyEdit>) {
         }
         PropValue::Text(text) => {
             let mut s = text.clone();
-            let align = if is_rtl(&s) { Align::RIGHT } else { Align::LEFT };
-            let r = ui.add(egui::TextEdit::singleline(&mut s).horizontal_align(align).desired_width(ui.available_width().min(160.0)));
+            let rtl = is_rtl(&s);
+            let align = if rtl { Align::RIGHT } else { Align::LEFT };
+            let width = ui.available_width().min(160.0);
+            let r = if rtl {
+                // egui shapes left to right: show the text in visual order. The caret still follows logical order.
+                let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap: f32| {
+                    let font = egui::TextStyle::Body.resolve(ui.style());
+                    ui.painter().layout(visual(text.as_str()).into_owned(), font, ui.visuals().text_color(), wrap)
+                };
+                ui.add(egui::TextEdit::singleline(&mut s).horizontal_align(align).desired_width(width).layouter(&mut layouter))
+            } else {
+                ui.add(egui::TextEdit::singleline(&mut s).horizontal_align(align).desired_width(width))
+            };
             if r.changed() || r.lost_focus() {
                 push(edits, PropValue::Text(s), r.lost_focus());
             }
