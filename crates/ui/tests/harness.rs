@@ -1,4 +1,5 @@
-//! Harness tests: widgets run in a real egui pass (egui_kittest, no GPU) with simulated pointer input.
+//! Harness tests: widgets run in a real egui pass (`egui_kittest`, no GPU) with simulated pointer input.
+#![allow(clippy::suboptimal_flops, clippy::items_after_statements, reason = "test code: positions are written the way the geometry reads")]
 
 use anim_ui::{
     LayerEvent, LayerRow, Span, StageEvent, StageViewState, TimelineEvent, TimelineModel, TimelineViewState,
