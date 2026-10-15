@@ -20,4 +20,7 @@ thiserror = { workspace = true }
 # Sample-gated tests read the FLA zips by local file headers (their central directory is 54 bytes short).
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 proptest = { workspace = true }
+# The preview test (tests/preview.rs) reads the sample XML and rasterises shapes to PNG contact sheets.
+roxmltree = "0.21"
 serde_json = { workspace = true }
+tiny-skia = { workspace = true }
