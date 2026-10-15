@@ -1,6 +1,8 @@
 //! Every event and view model is plain serde data, so a scripting or MCP layer can build the same events the widgets
 //! produce and feed them through the app's normal event path. These tests pin the JSON round trips.
 
+#![allow(clippy::expect_used, clippy::panic, reason = "test helpers")]
+
 use anim_ui::{
     Guide, LayerEvent, LibraryAction, LibraryEvent, Overlay, PropValue, PropertyEdit, StageEvent, StageView, TimelineEvent, TransportEvent,
     stage::{Axis, PointerPhase, StagePointer},

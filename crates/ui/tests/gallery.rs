@@ -1,6 +1,17 @@
 //! Renders an Animate-like window out of every widget: with `ANIM_UI_SCREENSHOT_DIR` set it writes PNGs there (software
 //! Vulkan is enough); without it the test still runs the whole UI headless and checks it produces no dock error.
-#![allow(clippy::suboptimal_flops, clippy::too_many_lines, reason = "demo code")]
+#![allow(
+    clippy::suboptimal_flops,
+    clippy::too_many_lines,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "demo code that paints a procedural picture"
+)]
 
 use anim_core::Rgba8;
 use anim_ui::{
@@ -126,9 +137,11 @@ fn gallery(theme: Theme) -> Gallery {
         Overlay::Marker { pos: pos2(320.0, 190.0), shape: MarkerShape::Diamond, color: accent, filled: true },
         Overlay::Text { pos: pos2(60.0, 226.0), text: "Hero".into(), color: accent },
     ];
-    let mut view = TimelineViewState::default();
-    view.selection = FrameSelection { layers: vec![11, 12], first: 14, last: 20 };
-    view.selected_layers = vec![11];
+    let view = TimelineViewState {
+        selection: FrameSelection { layers: vec![11, 12], first: 14, last: 20 },
+        selected_layers: vec![11],
+        ..TimelineViewState::default()
+    };
     let item = |id: u64, name: &str, kind, depth, expanded, thumb: bool| LibraryItemView {
         id,
         name: name.into(),
@@ -192,47 +205,41 @@ fn frame(ui: &mut egui::Ui, g: &mut Gallery) {
         }
     }
     let Gallery { layout, stage, model, view, props, library, transport, tools, tool, dock_error, .. } = g;
-    let output = dock::show_dock(
-        ui,
-        egui::Id::new("gallery-dock"),
-        layout,
-        |p| p.title(),
-        |ui, panel| match panel {
-            PanelId::Tools => {
-                for e in anim_ui::toolbar(ui, tools, tool) {
-                    let anim_ui::ToolbarEvent::Select(id) = e;
-                    *tool = id;
-                }
+    let output = dock::show_dock(ui, egui::Id::new("gallery-dock"), layout, PanelId::title, |ui, panel| match panel {
+        PanelId::Tools => {
+            for e in anim_ui::toolbar(ui, tools, tool) {
+                let anim_ui::ToolbarEvent::Select(id) = e;
+                *tool = id;
             }
-            PanelId::Stage => {
-                ui.vertical(|ui| {
-                    let bar_h = 34.0;
-                    let rest = ui.available_height() - bar_h;
-                    ui.allocate_ui(vec2(ui.available_width(), rest), |ui| {
-                        for e in anim_ui::stage_view(ui, stage, Some(&texture)) {
-                            if let anim_ui::StageEvent::ViewChanged(v) = e {
-                                stage.view = v;
-                                stage.fit_request = false;
-                            }
+        }
+        PanelId::Stage => {
+            ui.vertical(|ui| {
+                let bar_h = 34.0;
+                let rest = ui.available_height() - bar_h;
+                ui.allocate_ui(vec2(ui.available_width(), rest), |ui| {
+                    for e in anim_ui::stage_view(ui, stage, Some(&texture)) {
+                        if let anim_ui::StageEvent::ViewChanged(v) = e {
+                            stage.view = v;
+                            stage.fit_request = false;
                         }
-                    });
-                    let _ = anim_ui::transport_bar(ui, transport);
+                    }
                 });
+                let _ = anim_ui::transport_bar(ui, transport);
+            });
+        }
+        PanelId::Timeline => {
+            for e in anim_ui::timeline(ui, model, view) {
+                view.apply(&e);
             }
-            PanelId::Timeline => {
-                for e in anim_ui::timeline(ui, model, view) {
-                    view.apply(&e);
-                }
-            }
-            PanelId::Properties => {
-                let _ = anim_ui::property_grid(ui, props);
-            }
-            PanelId::Library => {
-                let _ = anim_ui::library_panel(ui, library);
-            }
-            _ => {}
-        },
-    );
+        }
+        PanelId::Properties => {
+            let _ = anim_ui::property_grid(ui, props);
+        }
+        PanelId::Library => {
+            let _ = anim_ui::library_panel(ui, library);
+        }
+        _ => {}
+    });
     *dock_error = output.error.is_some();
 }
 
