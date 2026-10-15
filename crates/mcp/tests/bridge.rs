@@ -17,51 +17,11 @@ mod common;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
-use std::thread::JoinHandle;
 use std::time::Duration;
 
-use anim_mcp::{Backend, Confinement, ControlConfig, ControlServer, ErrorKind, Request, connect_bridge, connect_bridge_from_file};
-use common::{RawClient, host_with};
-use crossbeam_channel::{Sender, bounded};
+use anim_mcp::{Backend, ErrorKind, Request, connect_bridge, connect_bridge_from_file};
+use common::{App, RawClient};
 use serde_json::{Value, json};
-
-/// A pretend app: a thread that owns the session host and pumps the control inbox like a UI frame loop.
-struct App {
-    server_addr: std::net::SocketAddr,
-    token: String,
-    stop: Option<Sender<()>>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl App {
-    fn start(dir: &std::path::Path, windowed: bool, export_step_ms: u64, token_file: Option<std::path::PathBuf>) -> Self {
-        let server = ControlServer::start(&ControlConfig { port: 0, token_file }, || {}).unwrap();
-        let (server_addr, token) = (server.addr(), server.token().to_owned());
-        let confinement = Confinement::new(&[dir.to_path_buf()], &[dir.to_path_buf()]).unwrap();
-        let (stop_tx, stop_rx) = bounded::<()>(1);
-        let thread = std::thread::spawn(move || {
-            let mut host = host_with(confinement, windowed, export_step_ms);
-            while stop_rx.try_recv() != Err(crossbeam_channel::TryRecvError::Disconnected) {
-                server.inbox().pump(&mut host); // a frame
-                std::thread::sleep(Duration::from_millis(2));
-            }
-        });
-        Self { server_addr, token, stop: Some(stop_tx), thread: Some(thread) }
-    }
-
-    fn connect(&self) -> Backend {
-        connect_bridge(self.server_addr, &self.token).unwrap()
-    }
-}
-
-impl Drop for App {
-    fn drop(&mut self) {
-        self.stop = None;
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
 
 fn run(backend: &Backend, id: &str, params: Value) -> Result<anim_mcp::Reply, anim_mcp::ControlError> {
     backend.call(Request::CommandRun { id: id.into(), params, merge_key: None })

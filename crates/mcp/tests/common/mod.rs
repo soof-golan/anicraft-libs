@@ -339,6 +339,44 @@ pub fn text_of(result: &Value) -> String {
     result["content"].as_array().unwrap().iter().filter(|c| c["type"] == "text").map(|c| c["text"].as_str().unwrap().to_owned()).collect::<Vec<_>>().join("\n")
 }
 
+/// A pretend app: a thread that owns the session host and pumps the control inbox like a UI frame loop.
+pub struct App {
+    pub server_addr: std::net::SocketAddr,
+    pub token: String,
+    stop: Option<crossbeam_channel::Sender<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl App {
+    pub fn start(dir: &Path, windowed: bool, export_step_ms: u64, token_file: Option<std::path::PathBuf>) -> Self {
+        let server = anim_mcp::ControlServer::start(&anim_mcp::ControlConfig { port: 0, token_file }, || {}).unwrap();
+        let (server_addr, token) = (server.addr(), server.token().to_owned());
+        let confinement = Confinement::new(&[dir.to_path_buf()], &[dir.to_path_buf()]).unwrap();
+        let (stop_tx, stop_rx) = crossbeam_channel::bounded::<()>(1);
+        let thread = std::thread::spawn(move || {
+            let mut host = host_with(confinement, windowed, export_step_ms);
+            while stop_rx.try_recv() != Err(crossbeam_channel::TryRecvError::Disconnected) {
+                server.inbox().pump(&mut host); // a frame
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        });
+        Self { server_addr, token, stop: Some(stop_tx), thread: Some(thread) }
+    }
+
+    pub fn connect(&self) -> anim_mcp::Backend {
+        anim_mcp::connect_bridge(self.server_addr, &self.token).unwrap()
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.stop = None;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 pub fn host(confinement: Confinement, windowed: bool) -> SessionHost<Toy, ToyHooks> {
     let session = Session::new(Toy::default(), registry());
     SessionHost::new(HostInfo { name: "toy".into(), version: "0.0.1".into() }, session, ToyHooks { windowed, pending_shot: None, export_step_ms: 0 })

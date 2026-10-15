@@ -19,7 +19,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use serde_json::{Value, json};
 use tokio::sync::mpsc::unbounded_channel;
 
-use crate::call::{Incoming, Ticket};
+use crate::call::{Backend, Incoming, Ticket};
 use crate::host::ControlHost;
 use crate::protocol::{CONTROL_VERSION, ControlError, ErrorKind, Event, Hello, MAX_REQUEST_BYTES, Request};
 use crate::wire::{Line, event_line, read_line, tokens_match, write_line};
@@ -45,6 +45,27 @@ pub struct ControlInbox {
 }
 
 impl ControlInbox {
+    /// An inbox fed directly by a [`Backend`] in the same process, with no socket: the app's own `--mcp-stdio` mode
+    /// runs the MCP front-end on a thread, backed by this, while the UI thread keeps owning the session. `wake` is
+    /// called (from a small helper thread) whenever a request is waiting, so the UI can repaint and pump.
+    ///
+    /// # Errors
+    /// Fails when the helper thread cannot start.
+    pub fn in_process<W: Fn() + Send + 'static>(wake: W) -> io::Result<(Self, Backend)> {
+        let (tx, rx) = unbounded::<Incoming>();
+        let (relay_tx, relay_rx) = unbounded::<Incoming>();
+        // A `Backend` can only hold a plain channel, so a relay thread forwards each request and then wakes the UI.
+        thread::Builder::new().name("anim-mcp-relay".into()).spawn(move || {
+            while let Ok(incoming) = relay_rx.recv() {
+                if tx.send(incoming).is_err() {
+                    break;
+                }
+                wake();
+            }
+        })?;
+        Ok((Self { rx }, Backend::new(relay_tx, "in-process", "in-process session")))
+    }
+
     /// Hands every waiting request to `host`. Returns how many were handled. Call once per frame.
     pub fn pump<H: ControlHost>(&self, host: &mut H) -> usize {
         let mut handled = 0_usize;
