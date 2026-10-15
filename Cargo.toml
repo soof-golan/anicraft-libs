@@ -26,6 +26,7 @@ anim-session = { path = "crates/session" }
 anim-shape = { path = "crates/shape" }
 anim-text = { path = "crates/text" }
 anim-ui = { path = "crates/ui" }
+anim-video = { path = "crates/video" }
 
 # Craft crates, pinned by rev like the Craft apps do.
 filmcraft-time = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
@@ -33,6 +34,7 @@ filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "2c5
 filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
 filmcraft-aac = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
 filmcraft-prores = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-h264 = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb3de70e735c8ce87a59a7dedd47675", features = ["serde"] }
 craft-settings = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
 craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
