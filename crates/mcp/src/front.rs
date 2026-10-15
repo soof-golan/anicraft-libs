@@ -12,9 +12,9 @@ use rmcp::ErrorData as McpError;
 use rmcp::RoleServer;
 use rmcp::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation, ListResourceTemplatesResult, ListResourcesResult, ListToolsResult,
-    PaginatedRequestParams, ProgressNotificationParam, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, ResourceContents,
-    ServerCapabilities, ServerConfig, Tool,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, GetPromptRequestParams, GetPromptResponse, GetPromptResult, Implementation,
+    ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, Prompt,
+    PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, ResourceContents, Role, ServerCapabilities, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use serde_json::{Map, Value, json};
@@ -31,6 +31,68 @@ const JOURNAL_URI: &str = "anim://session/journal";
 const PROPERTY_PREFIX: &str = "anim://property/";
 const QUERY_TOOL_PREFIX: &str = "query_";
 
+/// An argument of a [`PromptDef`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptArg {
+    /// Argument name, substituted for `{name}` in the template.
+    pub name: String,
+    /// What it is.
+    pub description: String,
+    /// Whether the client must supply it.
+    pub required: bool,
+}
+
+/// A prompt template the server offers (`prompts/list`, `prompts/get`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptDef {
+    /// Prompt name.
+    pub name: String,
+    /// What it is for.
+    pub description: String,
+    /// Arguments.
+    pub args: Vec<PromptArg>,
+    /// The user message, with `{argument}` placeholders.
+    pub template: String,
+}
+
+impl PromptDef {
+    /// The prompts every editor gets.
+    #[must_use]
+    pub fn defaults() -> Vec<Self> {
+        vec![
+            Self {
+                name: "getting_started".into(),
+                description: "How to inspect and edit the open document safely.".into(),
+                args: Vec::new(),
+                template: "You are driving an animation editor through MCP. 1) Call session_status. 2) Call inspect_document and, if useful, list_commands. \
+                           3) Look at the result with render_frame. 4) Make changes with run_batch (atomic, one undo step) or single commands. \
+                           5) Render again to check, and call undo if the result is wrong. Only write inside the folders session_status lists."
+                    .into(),
+            },
+            Self {
+                name: "make_change".into(),
+                description: "Achieve an edit goal with a checked, undoable batch.".into(),
+                args: vec![PromptArg { name: "goal".into(), description: "What the document should look like afterwards.".into(), required: true }],
+                template: "Goal: {goal}\n\nInspect the document first (session_status, inspect_document, render_frame). Plan the commands, apply them \
+                           in ONE run_batch so the change is a single undo step, render again to verify, and undo if it does not match the goal."
+                    .into(),
+            },
+        ]
+    }
+
+    fn render(&self, arguments: &Map<String, Value>) -> Result<String, McpError> {
+        let mut text = self.template.clone();
+        for arg in &self.args {
+            let value = arguments.get(&arg.name).and_then(Value::as_str);
+            if arg.required && value.is_none() {
+                return Err(McpError::invalid_params(format!("prompt {:?} needs the argument {:?}", self.name, arg.name), None));
+            }
+            text = text.replace(&format!("{{{}}}", arg.name), value.unwrap_or(""));
+        }
+        Ok(text)
+    }
+}
+
 /// The MCP server for one editor session.
 #[derive(Debug, Clone)]
 pub struct AnimMcp {
@@ -38,6 +100,7 @@ pub struct AnimMcp {
     name: String,
     version: String,
     instructions: String,
+    prompts: Vec<PromptDef>,
 }
 
 impl AnimMcp {
@@ -53,7 +116,16 @@ impl AnimMcp {
                            as one step. render_frame and screenshot return images. Paths must be absolute and inside the allowed folders \
                            (session_status shows them)."
                 .to_owned(),
+            prompts: PromptDef::defaults(),
         }
+    }
+
+    /// Adds application-specific prompts (a replacement with the same name wins over the default).
+    #[must_use]
+    pub fn with_prompts(mut self, prompts: Vec<PromptDef>) -> Self {
+        self.prompts.retain(|existing| !prompts.iter().any(|p| p.name == existing.name));
+        self.prompts.extend(prompts);
+        self
     }
 
     /// Replaces the instructions text clients may show to the model.
@@ -206,9 +278,31 @@ fn error_result(error: &ControlError) -> CallToolResult {
 
 impl ServerHandler for AnimMcp {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().enable_prompts().build())
             .with_server_info(Implementation::new(self.name.clone(), self.version.clone()))
             .with_instructions(self.instructions.clone())
+    }
+
+    #[expect(clippy::unused_async_trait_impl, reason = "the trait method is async")]
+    async fn list_prompts(&self, _request: Option<PaginatedRequestParams>, _context: RequestContext<RoleServer>) -> Result<ListPromptsResult, McpError> {
+        let prompts = self
+            .prompts
+            .iter()
+            .map(|p| {
+                let arguments: Vec<Value> = p.args.iter().map(|a| json!({ "name": a.name, "description": a.description, "required": a.required })).collect();
+                serde_json::from_value::<Prompt>(json!({ "name": p.name, "description": p.description, "arguments": arguments }))
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ListPromptsResult::with_all_items(prompts))
+    }
+
+    #[expect(clippy::unused_async_trait_impl, reason = "the trait method is async")]
+    async fn get_prompt(&self, request: GetPromptRequestParams, _context: RequestContext<RoleServer>) -> Result<GetPromptResponse, McpError> {
+        let prompt =
+            self.prompts.iter().find(|p| p.name == request.name).ok_or_else(|| McpError::invalid_params(format!("unknown prompt {:?}", request.name), None))?;
+        let text = prompt.render(&request.arguments.unwrap_or_default())?;
+        Ok(GetPromptResult::new(vec![PromptMessage::new_text(Role::User, text)]).with_description(prompt.description.clone()).into())
     }
 
     async fn list_tools(&self, _request: Option<PaginatedRequestParams>, _context: RequestContext<RoleServer>) -> Result<ListToolsResult, McpError> {

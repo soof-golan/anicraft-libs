@@ -257,6 +257,31 @@ pub trait AppHooks<D: Clone + SizeHint> {
     }
 }
 
+/// Runs `work` on its own thread and finishes the call with its result: the way for a hook to do a long job (an export,
+/// a render sequence) without blocking the session owner. Returns [`HookOutcome::Deferred`].
+///
+/// `work` must own its data (clone the document first); it reports through [`Ticket::progress`] and stops early when
+/// [`Ticket::is_cancelled`] turns true. A panic inside it becomes an `internal` error. Other requests keep being served
+/// meanwhile, so the document may change under the job: that is why it works on a copy.
+///
+/// # Errors
+/// [`crate::ErrorKind::Internal`] when the thread cannot be started.
+pub fn run_job<F>(ticket: &Ticket, name: &str, work: F) -> HookResult
+where
+    F: FnOnce(&Ticket) -> Result<Reply, ControlError> + Send + 'static,
+{
+    let ticket = ticket.clone();
+    std::thread::Builder::new()
+        .name(format!("anim-mcp-job-{name}"))
+        .spawn(move || {
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&ticket)))
+                .unwrap_or_else(|_| Err(ControlError::new(crate::protocol::ErrorKind::Internal, "the background job panicked")));
+            ticket.finish(outcome);
+        })
+        .map_err(|e| ControlError::new(crate::protocol::ErrorKind::Internal, format!("could not start a background job: {e}")))?;
+    Ok(HookOutcome::Deferred)
+}
+
 /// Writes the first image of a reply (or any image) to `path` atomically.
 ///
 /// # Errors

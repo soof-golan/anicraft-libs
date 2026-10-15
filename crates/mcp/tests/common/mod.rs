@@ -137,6 +137,20 @@ pub struct ToyHooks {
     pub windowed: bool,
     pub pending_shot: Option<(Ticket, ScreenshotRequest)>,
     pub export_step_ms: u64,
+    pub threaded: bool,
+}
+
+fn write_export(doc: &Toy, path: &Path, step_ms: u64, ticket: &Ticket) -> Result<Reply, ControlError> {
+    let steps = 10_u32;
+    for step in 0..steps {
+        ticket.check_cancelled()?;
+        ticket.progress(step as f32 / steps as f32, format!("writing part {step}"));
+        std::thread::sleep(Duration::from_millis(step_ms));
+    }
+    ticket.check_cancelled()?;
+    let text = serde_json::to_string_pretty(doc).map_err(|e| ControlError::failed(e.to_string()))?;
+    anim_session::craft_atomic::atomic_write(path, text.as_bytes()).map_err(|e| ControlError::failed(e.to_string()))?;
+    Ok(Reply::value(json!({ "path": path.display().to_string(), "bytes": text.len() })))
 }
 
 fn gradient(width: u32, height: u32, doc: &Toy) -> Vec<u8> {
@@ -223,16 +237,12 @@ impl AppHooks<Toy> for ToyHooks {
     }
 
     fn export(&mut self, doc: &Toy, request: &ExportRequest, ticket: &Ticket) -> HookResult {
-        let steps = 10_u32;
-        for step in 0..steps {
-            ticket.check_cancelled()?;
-            ticket.progress(step as f32 / steps as f32, format!("writing part {step}"));
-            std::thread::sleep(Duration::from_millis(self.export_step_ms));
+        let step_ms = self.export_step_ms;
+        if self.threaded {
+            let (doc, path) = (doc.clone(), request.path.clone());
+            return anim_mcp::run_job(ticket, "export", move |t| write_export(&doc, &path, step_ms, t));
         }
-        ticket.check_cancelled()?;
-        let text = serde_json::to_string_pretty(doc).map_err(|e| ControlError::failed(e.to_string()))?;
-        anim_session::craft_atomic::atomic_write(&request.path, text.as_bytes()).map_err(|e| ControlError::failed(e.to_string()))?;
-        Ok(HookOutcome::Ready(Reply::value(json!({ "path": request.path.display().to_string(), "bytes": text.len() }))))
+        write_export(doc, &request.path, step_ms, ticket).map(HookOutcome::Ready)
     }
 
     fn load(&mut self, path: &Path) -> Result<Toy, ControlError> {
@@ -323,6 +333,25 @@ impl RawClient {
         }
     }
 
+    /// Waits for the response to an earlier `send_raw` with this id.
+    pub async fn wait_for_response(&mut self, id: u64) -> Value {
+        use tokio::io::AsyncBufReadExt as _;
+        if let Some(at) = self.notifications.iter().position(|m| m.get("id") == Some(&json!(id))) {
+            return self.notifications.remove(at);
+        }
+        loop {
+            let mut line = String::new();
+            let read =
+                tokio::time::timeout(Duration::from_secs(20), self.reader.read_line(&mut line)).await.expect("timed out waiting for the server").unwrap();
+            assert!(read > 0, "the server closed the stream");
+            let message: Value = serde_json::from_str(line.trim()).unwrap();
+            if message.get("id") == Some(&json!(id)) {
+                return message;
+            }
+            self.notifications.push(message);
+        }
+    }
+
     /// Like `request_raw` but returns `result` and panics on a protocol error.
     pub async fn request(&mut self, method: &str, params: Value) -> Value {
         let response = self.request_raw(method, params).await;
@@ -379,12 +408,31 @@ impl Drop for App {
 
 pub fn host(confinement: Confinement, windowed: bool) -> SessionHost<Toy, ToyHooks> {
     let session = Session::new(Toy::default(), registry());
-    SessionHost::new(HostInfo { name: "toy".into(), version: "0.0.1".into() }, session, ToyHooks { windowed, pending_shot: None, export_step_ms: 0 })
-        .with_confinement(confinement)
+    SessionHost::new(
+        HostInfo { name: "toy".into(), version: "0.0.1".into() },
+        session,
+        ToyHooks { windowed, pending_shot: None, export_step_ms: 0, threaded: false },
+    )
+    .with_confinement(confinement)
 }
 
 pub fn host_with(confinement: Confinement, windowed: bool, export_step_ms: u64) -> SessionHost<Toy, ToyHooks> {
     let session = Session::new(Toy::default(), registry());
-    SessionHost::new(HostInfo { name: "toy".into(), version: "0.0.1".into() }, session, ToyHooks { windowed, pending_shot: None, export_step_ms })
-        .with_confinement(confinement)
+    SessionHost::new(
+        HostInfo { name: "toy".into(), version: "0.0.1".into() },
+        session,
+        ToyHooks { windowed, pending_shot: None, export_step_ms, threaded: false },
+    )
+    .with_confinement(confinement)
+}
+
+/// Like `host_with`, but exports run on a background job so the session stays responsive.
+pub fn host_threaded(confinement: Confinement, export_step_ms: u64) -> SessionHost<Toy, ToyHooks> {
+    let session = Session::new(Toy::default(), registry());
+    SessionHost::new(
+        HostInfo { name: "toy".into(), version: "0.0.1".into() },
+        session,
+        ToyHooks { windowed: false, pending_shot: None, export_step_ms, threaded: true },
+    )
+    .with_confinement(confinement)
 }

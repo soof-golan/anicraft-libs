@@ -496,9 +496,76 @@ async fn inspect_document_and_queries() {
 }
 
 #[tokio::test]
+async fn prompts_are_listed_and_filled_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut client, _session) = start(false, 0, dir.path()).await;
+    assert!(client.init["capabilities"]["prompts"].is_object());
+    let list = client.request("prompts/list", json!({})).await;
+    let names: Vec<&str> = list["prompts"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"getting_started") && names.contains(&"make_change"));
+    let prompt = client.request("prompts/get", json!({ "name": "make_change", "arguments": { "goal": "move the sun right" } })).await;
+    let text = prompt["messages"][0]["content"]["text"].as_str().unwrap();
+    assert!(text.contains("move the sun right") && text.contains("run_batch"));
+    assert_eq!(prompt["messages"][0]["role"], "user");
+    let missing = client.request_raw("prompts/get", json!({ "name": "make_change" })).await;
+    assert!(missing["error"].is_object());
+    let unknown = client.request_raw("prompts/get", json!({ "name": "nope" })).await;
+    assert!(unknown["error"].is_object());
+}
+
+#[tokio::test]
 async fn ping_works() {
     let dir = tempfile::tempdir().unwrap();
     let (mut client, _session) = start(false, 0, dir.path()).await;
     let pong = client.request_raw("ping", json!({})).await;
     assert!(pong.get("error").is_none(), "{pong}");
+}
+
+async fn start_threaded(step_ms: u64, dir: &std::path::Path) -> (RawClient, anim_mcp::HeadlessSession) {
+    let confinement = confinement(dir);
+    let session = spawn_headless(move || common::host_threaded(confinement, step_ms)).unwrap();
+    let client = RawClient::start(session.backend().clone()).await;
+    (client, session)
+}
+
+#[tokio::test]
+async fn background_jobs_keep_the_session_responsive_and_report_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut client, _session) = start_threaded(60, dir.path()).await;
+    client.call_tool("layer_add", json!({ "name": "a" })).await;
+    let out = dir.path().join("job.json");
+    let call = json!({ "jsonrpc": "2.0", "id": 900, "method": "tools/call", "params": {
+        "name": "export", "arguments": { "format": "json", "path": out.to_str().unwrap() }, "_meta": { "progressToken": 5 } } });
+    client.send_raw(&call).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // While the export runs on its worker, other requests are answered at once and the document can still change.
+    let started = std::time::Instant::now();
+    let status = client.call_tool("session_status", json!({})).await;
+    assert!(started.elapsed() < std::time::Duration::from_millis(400), "status waited for the export");
+    assert_eq!(status["isError"], false);
+    client.call_tool("layer_add", json!({ "name": "b" })).await;
+    let answer = client.wait_for_response(900).await;
+    assert_eq!(answer["result"]["isError"], false, "{answer}");
+    assert!(out.exists());
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(saved["layers"].as_array().unwrap().len(), 1, "the job worked on a copy taken when it started");
+    let progress = client.notifications.iter().filter(|n| n["method"] == "notifications/progress" && n["params"]["progressToken"] == 5).count();
+    assert!(progress >= 3, "{:?}", client.notifications);
+    let journal = client.call_tool("journal", json!({})).await;
+    let entries = journal["structuredContent"]["entries"].as_array().unwrap();
+    assert!(entries.iter().any(|e| e["request"].as_str().unwrap().starts_with("export.run") && e["outcome"] == "deferred"));
+}
+
+#[tokio::test]
+async fn cancelling_a_background_job_stops_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut client, _session) = start_threaded(100, dir.path()).await;
+    let out = dir.path().join("cancelled.json");
+    let call = json!({ "jsonrpc": "2.0", "id": 901, "method": "tools/call", "params": { "name": "export", "arguments": { "format": "json", "path": out.to_str().unwrap() } } });
+    client.send_raw(&call).await;
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    client.notify("notifications/cancelled", json!({ "requestId": 901 })).await;
+    tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
+    assert!(!out.exists(), "a cancelled job must not finish its write");
+    assert_eq!(client.call_tool("session_status", json!({})).await["isError"], false);
 }
