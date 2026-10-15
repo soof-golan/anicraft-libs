@@ -48,6 +48,37 @@ releases, the way the Craft apps pin `craft-libs`.
 | `anim-ui` | Shared egui widgets: stage view (pan/zoom/rulers/guides, texture upload), timeline grid (layers, frames, keyframes, tweens, playhead, onion skin), layer list, property inspector, library browser, transport bar, docking via craft-ui, theme | egui, craft-ui |
 | `anim-session` | App framework: command registry (`id`, label, menu, shortcut, `run(&mut Doc, params) -> Result`), snapshot undo/redo with merge keys, background jobs as actors with progress/cancel, settings (craft-settings), atomic save (craft-atomic), recent files | craft-settings, craft-atomic |
 
+### What `anim-render` guarantees producers and exporters
+
+Entry points: `render(&DisplayList, &ImageStore, &RenderOptions) -> Result<Image>` (premultiplied RGBA8), the reusable
+`Renderer` (keeps scratch buffers; `recycle(image)` hands a finished frame back), `RenderStats` (what the last render
+skipped), `content_bounds` and the straight/premultiplied pixel converters.
+
+- **Coordinates**: stage pixels, y down; `RenderOptions::view` maps stage to output pixels. Geometry beyond ±1e7
+  device pixels, non-finite numbers and degenerate matrices skip the node (counted in `RenderStats::invalid`), never
+  panic; nesting deeper than `MAX_DEPTH` (64) is not drawn.
+- **Groups** that only carry a transform draw straight onto the parent. Otherwise (colour transform, blend other than
+  normal/pass-through, mask, filters) the group is rendered into a bounds-limited offscreen layer and processed in this
+  order: children, mask alpha, filters in list order, colour transform, composite with the blend mode. `Normal` and
+  `PassThrough` groups are not isolated (their children blend with the backdrop); `Layer` isolates.
+- **Blend modes**: Flash `Alpha` and `Erase` act on the *current layer buffer*, so give their parent `BlendMode::Layer`
+  (as Animate does); `Subtract` and `Invert` use the W3C general compositing formula; the stage background is part of the
+  root buffer, so blend modes see it.
+- **Colour transforms** (and colour-matrix filters) leave fully transparent pixels alone, so results never depend on
+  internal layer bounds. Offsets are unit-range (`1.0` = 255).
+- **Strokes**: width 0 is a one-pixel hairline in every scale mode. `StrokeScale::Horizontal` means the thickness does
+  not follow horizontal scaling (SWF `NoHScale`), `Vertical` the reverse, `None` is device pixels; dash lengths are in
+  local units. Odd dash arrays repeat.
+- **Filters**: blur sizes and shadow distances are in the group's own pixels and scale with the matrix; `strength` 1.0 is
+  100 %; blur `quality` is the number of box passes (shadows and glows use 3); the shadow direction stays fixed in device
+  space. Layers over 64 M pixels skip blur/shadow/glow (`degraded_groups`).
+- **Bitmaps**: smoothing off is nearest-neighbour; smoothing on is bilinear, with box-filtered mip levels when drawn at
+  under half size. Clamped bitmap fills extend their edge pixels.
+- **Meshes**: an undeformed mesh (target == source) reproduces the plain render exactly and has hard edges; a deformed
+  mesh renders its content at the fitted pixel density, fills triangles seamlessly and anti-aliases its silhouette.
+- **Determinism**: the same inputs give the same bytes on one machine, regardless of thread count. tiny-skia's SIMD paths
+  may differ in the last bit between CPU architectures, so compare across platforms with a small tolerance.
+
 ### The document model (`anim-scene`)
 
 Mirrors XFL so loading and saving lose nothing:
