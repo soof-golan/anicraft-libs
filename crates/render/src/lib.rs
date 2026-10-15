@@ -1,7 +1,8 @@
 //! Deterministic CPU rasteriser for [`anim_display::DisplayList`]s.
 //!
-//! [`render`] turns a display list and its [`ImageStore`] into a premultiplied RGBA8 [`Image`]; a [`Renderer`]
-//! does the same while keeping its scratch buffers between frames (animation playback, export, previews).
+//! [`render`] turns a display list and its [`anim_display::ImageStore`] into a premultiplied RGBA8
+//! [`anim_display::Image`]; a [`Renderer`] does the same while keeping its scratch buffers between frames
+//! (animation playback, export, previews).
 //!
 //! What is drawn, and how:
 //!

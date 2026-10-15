@@ -1,7 +1,7 @@
 //! The public entry points: [`render`] and the reusable [`Renderer`].
 
 use anim_core::{Affine, Rect, Rgba8};
-use anim_display::{DisplayList, Image, ImageStore};
+use anim_display::{DisplayList, Image, ImageStore, Node};
 
 use crate::draw::{self, Ctx};
 use crate::error::RenderError;
@@ -52,6 +52,15 @@ impl Renderer {
     /// # Errors
     /// See [`render`].
     pub fn render(&mut self, list: &DisplayList, images: &ImageStore, options: &RenderOptions) -> Result<Image, RenderError> {
+        self.render_nodes(&list.nodes, list.background, images, options)
+    }
+
+    /// Renders a sibling list of nodes (a symbol's content for a library thumbnail, one onion-skin layer) without
+    /// wrapping them in a [`DisplayList`]. `background` is what [`Background::FromDisplayList`] resolves to.
+    ///
+    /// # Errors
+    /// See [`render`].
+    pub fn render_nodes(&mut self, nodes: &[Node], background: Option<Rgba8>, images: &ImageStore, options: &RenderOptions) -> Result<Image, RenderError> {
         let (width, height) = (options.width, options.height);
         if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
             return Err(RenderError::InvalidSize { width, height, max: MAX_DIMENSION });
@@ -67,11 +76,11 @@ impl Renderer {
         self.pool.reset_peak();
         let mut root = self.pool.take(rect).ok_or(RenderError::Allocation { width, height })?;
         let root_bytes = self.pool.live_bytes();
-        if let Some(color) = backdrop(list, options.background) {
+        if let Some(color) = backdrop(background, options.background) {
             root.pm.fill(convert::color(color));
         }
         let mut cx = Ctx { images, antialias: options.antialias, pool: &mut self.pool, stats: &mut self.stats, mips: MipCache::default() };
-        draw::nodes(&mut cx, &mut root, &list.nodes, options.view, 0);
+        draw::nodes(&mut cx, &mut root, nodes, options.view, 0);
         self.stats.peak_layer_bytes = self.pool.peak_bytes().saturating_sub(root_bytes);
         let bytes = self.pool.release(root);
         Ok(Image::new(width, height, bytes)?)
@@ -82,16 +91,16 @@ impl Renderer {
         self.pool.keep(image.premultiplied_rgba);
     }
 
-    /// What the last [`Renderer::render`] did.
+    /// What the last [`Renderer::render`] or [`Renderer::render_nodes`] did.
     #[must_use]
     pub const fn stats(&self) -> RenderStats {
         self.stats
     }
 }
 
-fn backdrop(list: &DisplayList, background: Background) -> Option<Rgba8> {
+fn backdrop(from_list: Option<Rgba8>, background: Background) -> Option<Rgba8> {
     match background {
-        Background::FromDisplayList => list.background,
+        Background::FromDisplayList => from_list,
         Background::Transparent => None,
         Background::Solid(color) => Some(color),
     }

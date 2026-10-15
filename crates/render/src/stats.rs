@@ -1,8 +1,10 @@
 //! Counters describing what the last render did.
 
+use serde::{Deserialize, Serialize};
+
 /// What a render did. Content problems never fail a render: the node is skipped and counted here, so tools (and
 /// tests) can tell "drew nothing" from "could not draw".
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenderStats {
     /// Fills, strokes, bitmaps and meshes that were rasterised.
     pub drawn: usize,

@@ -2,9 +2,10 @@
 
 use anim_core::num::{ceil_f64_to_i32, f64_to_f32};
 use anim_core::{Affine, Rgba8, Size, Vec2};
+use serde::{Deserialize, Serialize};
 
 /// Where the backdrop colour comes from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Background {
     /// Use [`anim_display::DisplayList::background`] (transparent when it is `None`).
     #[default]
@@ -15,8 +16,8 @@ pub enum Background {
     Solid(Rgba8),
 }
 
-/// How to rasterise one display list.
-#[derive(Debug, Clone, PartialEq)]
+/// How to rasterise one display list. Plain serde, so tools can take it as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RenderOptions {
     /// Output width in pixels.
     pub width: u32,

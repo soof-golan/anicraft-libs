@@ -10,6 +10,34 @@ use proptest::prelude::*;
 use crate::common::*;
 
 #[test]
+fn render_nodes_matches_rendering_the_same_list() {
+    let mut scene = Scene::new(24, 24);
+    scene.add(solid_rect(2.0, 2.0, 12.0, 12.0, RED));
+    scene.add(with_color(vec![solid_circle(14.0, 14.0, 7.0, BLUE)], ColorTransform::alpha(0.5)));
+    let options = RenderOptions::new(24, 24);
+    let mut renderer = Renderer::new();
+    let whole = renderer.render(&scene.list, &scene.images, &options).unwrap();
+    let parts = renderer.render_nodes(&scene.list.nodes, scene.list.background, &scene.images, &options).unwrap();
+    assert_eq!(whole, parts);
+    let bare = renderer.render_nodes(&scene.list.nodes, None, &scene.images, &options).unwrap();
+    assert_eq!(pixel(&bare, 20, 2), [0, 0, 0, 0], "no backdrop unless one is given");
+    let solid = renderer.render_nodes(&scene.list.nodes, None, &scene.images, &options.clone().with_background(anim_render::Background::Solid(BLACK))).unwrap();
+    assert_eq!(pixel(&solid, 20, 2), [0, 0, 0, 255]);
+}
+
+#[test]
+fn options_and_stats_round_trip_through_json() {
+    let options = RenderOptions::fit_stage(Size::new(320.0, 180.0), 640, 480)
+        .with_background(anim_render::Background::Solid(Rgba8::new(1, 2, 3, 4)))
+        .with_antialias(false);
+    let json = serde_json::to_string(&options).unwrap();
+    assert_eq!(serde_json::from_str::<RenderOptions>(&json).unwrap(), options);
+    let (_, stats) = Scene::new(4, 4).render_stats();
+    let json = serde_json::to_string(&stats).unwrap();
+    assert_eq!(serde_json::from_str::<anim_render::RenderStats>(&json).unwrap(), stats);
+}
+
+#[test]
 fn bad_output_sizes_are_errors() {
     let scene = Scene::new(8, 8);
     let try_size = |w, h| anim_render::render(&scene.list, &scene.images, &RenderOptions::new(w, h));
