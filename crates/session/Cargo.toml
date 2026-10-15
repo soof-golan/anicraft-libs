@@ -1,0 +1,23 @@
+[package]
+name = "anim-session"
+description = "App framework shared by AniCraft and CharCraft: command registry, snapshot undo/redo, background jobs, settings, atomic saves and an MCP interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+craft-atomic = { workspace = true }
+craft-settings = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+crossbeam-channel = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+proptest = { workspace = true }
