@@ -13,6 +13,7 @@ use parley::editing::{Cursor, Selection};
 use parley::layout::{Affinity as ParleyAffinity, Cluster, Layout};
 use serde::{Serialize, Serializer};
 
+use crate::model::snap_down;
 use crate::motion::{Affinity, Caret};
 
 /// Width of the rectangle that shows a selected paragraph break, as a fraction of the line height.
@@ -142,6 +143,8 @@ pub struct ParaLayout {
     pub start: usize,
     /// Bytes of paragraph text.
     pub len: usize,
+    /// The paragraph's text, to find character boundaries (the layout itself does not keep it).
+    pub text: String,
     /// Bytes of invisible direction mark parley sees before the text.
     pub prefix: usize,
     /// Top-left corner of the paragraph box in layout space.
@@ -158,9 +161,11 @@ impl ParaLayout {
         self.spacing * f64_to_f32(usize_to_f64(line))
     }
 
-    /// Plain-text offset of parley byte index `index`.
+    /// Plain-text offset of parley byte index `index`, snapped back to a character boundary. (Parley splits the text
+    /// range of a multi-character ligature cluster evenly by bytes, which can land inside a character.)
     pub fn global(&self, index: usize) -> usize {
-        self.start.saturating_add(index.saturating_sub(self.prefix).min(self.len))
+        let local = index.saturating_sub(self.prefix).min(self.len);
+        self.start.saturating_add(snap_down(&self.text, local))
     }
 
     /// Parley byte index of plain-text offset `offset`.

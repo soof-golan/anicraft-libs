@@ -244,6 +244,42 @@ fn marks_and_joiners_after_a_line_break_do_not_derail_shaping() {
     }
 }
 
+/// Found by the soak test: parley splits the text range of a multi-character cluster (a letter followed by a
+/// zero-width joiner) evenly by bytes, so a line break between its components landed inside a character. Every offset
+/// the layout reports is snapped back to a character boundary.
+#[test]
+fn offsets_stay_on_character_boundaries_when_parley_splits_a_cluster() {
+    let Some(mut engine) = common::engine_for(&[anim_text::Script::Hebrew, anim_text::Script::Han]) else { return };
+    let run = |text: &str, letter_spacing: f64| Run { text: text.into(), letter_spacing, ..Run::default() };
+    let text = RichText::new(vec![Paragraph {
+        direction: Direction::Ltr,
+        runs: vec![
+            run("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 0.0),
+            run("a中aaaaaaaaaaaaaaaa\u{2028}aaaaa\u{200d}ש中aaaaaaaaaaaaaaaaaaaaaaaa", 0.0),
+            run("aaaaaaaaaaשaaaaaaaaaaaaaaaaaaaaaaaaaaa中\u{200d}\u{301}", 163.7),
+        ],
+        ..Paragraph::default()
+    }]);
+    for width in [1.0, 5.0, 40.0, 1e300] {
+        let layout = engine.layout(&text, Some(width));
+        let on_boundary = |o: usize| layout.text().is_char_boundary(o);
+        for line in &layout.lines {
+            assert!(on_boundary(line.range.start) && on_boundary(line.range.end), "width {width}: line {:?}", line.range);
+        }
+        for run in &layout.runs {
+            assert!(on_boundary(run.range.start) && on_boundary(run.range.end), "width {width}: run {:?}", run.range);
+        }
+        for offset in (0..=layout.text().len()).filter(|&o| on_boundary(o)) {
+            for motion in [Motion::Left, Motion::Right, Motion::LineStart, Motion::LineEnd, Motion::WordRight] {
+                let moved = layout.move_caret(Caret::new(offset), motion, None);
+                assert!(on_boundary(moved.offset), "width {width}: {motion:?} from {offset} gave {moved:?}");
+            }
+            let word = layout.word_range_at(offset);
+            assert!(on_boundary(word.start) && on_boundary(word.end));
+        }
+    }
+}
+
 #[test]
 fn word_motion_always_terminates() {
     let Some(mut engine) = engine() else { return };
