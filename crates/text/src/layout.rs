@@ -15,6 +15,9 @@ use serde::{Serialize, Serializer};
 
 use crate::motion::{Affinity, Caret};
 
+/// Width of the rectangle that shows a selected paragraph break, as a fraction of the line height.
+const PARAGRAPH_BREAK_WIDTH: f64 = 0.25;
+
 /// One positioned glyph. `x`/`y` is the glyph origin (on the baseline) in layout space.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Glyph {
@@ -306,21 +309,27 @@ impl TextLayout {
     }
 
     /// The rectangles that highlight `range`: one per line and per visually separate stretch (a selection that crosses a
-    /// left-to-right/right-to-left boundary gives several on one line). Paragraph breaks inside the range are not
-    /// drawn.
+    /// left-to-right/right-to-left boundary gives several on one line). A paragraph break inside the range is shown, as
+    /// editors do, by a narrow rectangle just past the end of the paragraph's last line (on the left of a right-to-left
+    /// paragraph).
     #[must_use]
     pub fn selection_rects(&self, range: Range<usize>) -> Vec<Rect> {
         let mut out = Vec::new();
-        for para in &self.paras {
+        for (index, para) in self.paras.iter().enumerate() {
             let end = para.start.saturating_add(para.len);
             let (lo, hi) = (range.start.max(para.start), range.end.min(end));
-            if lo >= hi {
-                continue;
+            if lo < hi {
+                let anchor = Cursor::from_byte_index(&para.layout, para.index(lo), ParleyAffinity::Downstream);
+                let focus = Cursor::from_byte_index(&para.layout, para.index(hi), ParleyAffinity::Upstream);
+                for (bb, line) in Selection::new(anchor, focus).geometry(&para.layout) {
+                    out.push(rect_of(para, bb.x0, bb.y0, bb.x1, bb.y1, line));
+                }
             }
-            let anchor = Cursor::from_byte_index(&para.layout, para.index(lo), ParleyAffinity::Downstream);
-            let focus = Cursor::from_byte_index(&para.layout, para.index(hi), ParleyAffinity::Upstream);
-            for (bb, line) in Selection::new(anchor, focus).geometry(&para.layout) {
-                out.push(rect_of(para, bb.x0, bb.y0, bb.x1, bb.y1, line));
+            let has_break = index.saturating_add(1) < self.paras.len();
+            if has_break && range.start <= end && range.end > end {
+                let Some(at) = self.caret_rect(Caret { offset: end, affinity: Affinity::Upstream }, 0.0) else { continue };
+                let width = at.height() * PARAGRAPH_BREAK_WIDTH;
+                out.push(if para.rtl { Rect::new(at.x0 - width, at.y0, at.x0, at.y1) } else { Rect::new(at.x0, at.y0, at.x0 + width, at.y1) });
             }
         }
         out

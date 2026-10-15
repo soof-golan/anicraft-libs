@@ -93,6 +93,30 @@ fn selection_rectangles_cover_the_selected_characters() {
 }
 
 #[test]
+fn a_selected_paragraph_break_is_a_narrow_rectangle_after_the_paragraph() {
+    let Some(mut engine) = engine() else { return };
+    let layout = engine.layout(&RichText::plain("one\ntwo\n\nfour"), Some(300.0));
+    // "e\nt": the end of "one", its break and the start of "two".
+    let rects = layout.selection_rects(2..5);
+    assert_eq!(rects.len(), 3, "{rects:?}");
+    let end_of_one = layout.caret_rect(Caret { offset: 3, affinity: Affinity::Upstream }, 0.0).unwrap();
+    let marker = rects.iter().find(|r| close(r.x0, end_of_one.x0, 0.01) && r.width() > 2.0 && r.y0 < layout.lines[1].rect.y0).expect("a marker after the text");
+    assert!(close(marker.width(), end_of_one.height() * 0.25, 0.01));
+    // The break of an empty paragraph is selectable too, and the last paragraph has none.
+    assert_eq!(layout.selection_rects(8..9).len(), 1);
+    assert_eq!(layout.selection_rects(9..13).len(), 1);
+    assert_eq!(layout.selection_rects(0..layout.text().len()).len(), 6, "four texts' worth: three words, two breaks and one empty paragraph's break");
+    // In a right-to-left paragraph the marker is on the left of the text.
+    let Some(mut engine) = engine_for(&[Script::Hebrew]) else { return };
+    let rtl = engine
+        .layout(&RichText::new(vec![Paragraph { direction: Direction::Rtl, ..Paragraph::new(vec![run(HEBREW)]) }, Paragraph::from_text("x")]), Some(300.0));
+    let text_len = HEBREW.len();
+    let marker = rtl.selection_rects(text_len..text_len + 1);
+    assert_eq!(marker.len(), 1);
+    assert!(marker[0].x1 <= rtl.lines[0].rect.x0 + 0.01, "{:?} vs {:?}", marker[0], rtl.lines[0].rect);
+}
+
+#[test]
 fn selection_across_wrapped_lines_gives_a_rectangle_per_line() {
     let Some(mut engine) = engine() else { return };
     let layout = engine.layout(&one(SENTENCE), Some(150.0));

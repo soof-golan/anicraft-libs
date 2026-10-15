@@ -33,6 +33,28 @@ fn latin_text_becomes_one_filled_path_per_run_inside_the_layout_bounds() {
 }
 
 #[test]
+fn ink_bounds_hug_the_letters_not_the_line_box() {
+    let Some(mut engine) = engine() else { return };
+    let layout = engine.layout(&one("HH"), None);
+    let ink = engine.ink_bounds(&layout).expect("capitals have ink");
+    let line = layout.lines[0].rect;
+    assert!(ink.height() < line.height() * 0.9, "ink {ink:?} inside line {line:?}");
+    assert!(ink.y1 <= layout.lines[0].baseline + 0.6, "capitals sit on the baseline");
+    assert!(ink.x0 >= line.x0 - 0.5 && ink.x1 <= line.x1 + 0.5);
+    assert!(ink.width() > 15.0);
+    // Nothing to draw: spaces, nothing at all, transparent text.
+    let spaces = engine.layout(&one("   "), None);
+    assert_eq!(engine.ink_bounds(&spaces), None);
+    let nothing = engine.layout(&RichText::default(), None);
+    assert_eq!(engine.ink_bounds(&nothing), None);
+    let ghost = engine.layout(&RichText::new(vec![Paragraph::new(vec![Run { color: Rgba8::TRANSPARENT, ..run("ghost") }])]), None);
+    assert_eq!(engine.ink_bounds(&ghost), None);
+    // An underline counts as ink.
+    let underlined = engine.layout(&RichText::new(vec![Paragraph::new(vec![Run { underline: true, ..run("    ") }])]), None);
+    assert!(engine.ink_bounds(&underlined).is_some_and(|b| b.width() > 10.0));
+}
+
+#[test]
 fn glyphs_are_drawn_y_down_with_capitals_above_the_baseline() {
     let Some(mut engine) = engine() else { return };
     let layout = engine.layout(&one("H"), None);
