@@ -61,6 +61,7 @@ dependencies = [
  "png",
  "proptest",
  "serde",
+ "serde_json",
  "thiserror",
  "usvg",
  "vectorcraft-color",

@@ -262,6 +262,63 @@ mod tests {
         assert!(tree.find("Background").unwrap().visible);
     }
 
+    fn first_pixel(tree: &ArtworkTree, name: &str) -> Vec<u8> {
+        let ArtKind::Raster { image, .. } = &tree.find(name).unwrap().kind else { panic!("{name} should be a raster: {:?}", tree.warnings) };
+        image.premultiplied_rgba.get(..4).unwrap().to_vec()
+    }
+
+    #[test]
+    fn grayscale_cmyk_and_16_bit_layers_decode_to_rgba() {
+        let gray = {
+            let mut b = PsdBuilder::new(4, 4).color_mode(photocraft_psd::ColorMode::Grayscale);
+            b.push_layer(LayerSpec::new("Gray", 0, 0, 1, 1, PixelData::GrayA8(vec![128, 255])));
+            b.to_bytes().unwrap()
+        };
+        assert_eq!(first_pixel(&import_psd(&gray, &Limits::default()).unwrap(), "Gray"), [128, 128, 128, 255]);
+
+        let deep = {
+            let mut b = PsdBuilder::new(4, 4).depth(16);
+            b.push_layer(LayerSpec::new("Deep", 0, 0, 1, 1, PixelData::Rgba16(vec![65535, 0, 32768, 65535])));
+            b.to_bytes().unwrap()
+        };
+        let px = first_pixel(&import_psd(&deep, &Limits::default()).unwrap(), "Deep");
+        assert_eq!((px[0], px[1], px[3]), (255, 0, 255));
+        assert!(px[2].abs_diff(128) <= 1, "{px:?}");
+
+        let cmyk = {
+            let mut b = PsdBuilder::new(4, 4).color_mode(photocraft_psd::ColorMode::Cmyk);
+            b.push_layer(LayerSpec::new("Paper", 0, 0, 1, 1, PixelData::Cmyka8(vec![0, 0, 0, 0, 255])));
+            b.push_layer(LayerSpec::new("Ink", 1, 0, 1, 1, PixelData::Cmyka8(vec![0, 0, 0, 255, 255])));
+            b.to_bytes().unwrap()
+        };
+        let tree = import_psd(&cmyk, &Limits::default()).unwrap();
+        assert_eq!(first_pixel(&tree, "Paper"), [255, 255, 255, 255]);
+        let ink = first_pixel(&tree, "Ink");
+        assert!(ink.iter().take(3).all(|c| *c < 60), "{ink:?}");
+    }
+
+    #[test]
+    fn group_mask_becomes_a_canvas_mask() {
+        let mut builder = PsdBuilder::new(8, 8);
+        builder.begin_group(GroupSpec::new("G"));
+        builder.push_layer(LayerSpec::new("inside", 0, 0, 2, 1, solid(2, 1, [9, 9, 9, 255])));
+        builder.end_group().unwrap();
+        let mut file = builder.build().unwrap();
+        let version = file.header.version;
+        let group = file.layers_mut().iter_mut().find(|r| r.name() == "G" && r.section_type() != photocraft_psd::SectionType::BoundingDivider).unwrap();
+        group.mask = photocraft_psd::MaskData::Mask(photocraft_psd::LayerMask::new(PsdRect::from_xywh(3, 2, 2, 1), 0, 0));
+        group.channels.push(photocraft_psd::ChannelData::encode(-2, photocraft_psd::Compression::Raw, &[0, 255], 2, 1, 8, version).unwrap());
+        let tree = import_psd(&file.to_bytes().unwrap(), &Limits::default()).unwrap();
+        let g = tree.find("G").unwrap();
+        let Some(ArtMask::Raster { image, offset }) = &g.mask else { panic!("mask expected on {g:?}") };
+        assert_eq!(*offset, Point::new(3.0, 2.0));
+        assert_eq!(image.premultiplied_rgba, [0, 0, 0, 0, 0, 0, 0, 255]);
+        // Group masks reach the display list too.
+        let list = crate::to_display(&tree, &mut anim_display::ImageStore::new());
+        let anim_display::Node::Group(outer) = &list.nodes[0] else { panic!("group expected") };
+        assert!(outer.mask.is_some());
+    }
+
     #[test]
     fn colour_is_premultiplied() {
         let bytes = build(|b| {

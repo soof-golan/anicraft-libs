@@ -77,6 +77,50 @@ fn girl_ai_layer_tree() {
     assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[0] != 255), "render is blank");
 }
 
+/// A grid of every mouth shape of the girl character, each rendered on its own, for visual review.
+#[test]
+fn mouth_shapes_contact_sheet() {
+    let Some(tree) = load("extracted/blood_cells/Ch Media/Gathered Media/A girl character (1).ai") else { return };
+    let mouth_path = ["Ch", "Head", "mouth"];
+    let Some(mouth) = tree.root.find_path(&mouth_path) else { return };
+    let bounds = mouth.bounds().unwrap();
+    let names: Vec<String> = mouth.children().iter().map(|c| c.name.clone()).collect();
+    println!("mouth shapes: {names:?} within {bounds:?}");
+    assert!(names.len() >= 10);
+
+    let (cw, ch, columns) = (240_usize, 160_usize, 4_usize);
+    let (cell_w, cell_h) = (u32::try_from(cw).unwrap(), u32::try_from(ch).unwrap());
+    let rows = names.len().div_ceil(columns);
+    let (sheet_w, sheet_h) = (cw * columns, ch * rows);
+    let mut sheet = vec![255_u8; sheet_w * sheet_h * 4];
+    for (i, _) in names.iter().enumerate() {
+        let mut variant = tree.clone();
+        let m = variant.root.find_path_mut(&mouth_path).unwrap();
+        let anim_artwork::ArtKind::Group(children) = &mut m.kind else { panic!("mouth is a group") };
+        for (j, child) in children.iter_mut().enumerate() {
+            child.visible = i == j;
+        }
+        // Only the head's mouth is drawn: hide everything else under the layer.
+        let mut store = ImageStore::new();
+        let mut list = to_display(&variant, &mut store);
+        list.background = None;
+        let size = anim_core::Size::new(bounds.width() + 20.0, bounds.height() + 20.0);
+        let mut options = RenderOptions::fit_stage(size, cell_w, cell_h);
+        options.view *= anim_core::Affine::translate((10.0 - bounds.x0, 10.0 - bounds.y0));
+        options.background = Background::Solid(anim_core::Rgba8::WHITE);
+        let cell = render(&list, &store, &options).unwrap();
+        let (cx, cy) = ((i % columns) * cw, (i / columns) * ch);
+        for y in 0..ch {
+            let src = y * cw * 4;
+            let dst = ((cy + y) * sheet_w + cx) * 4;
+            sheet[dst..dst + cw * 4].copy_from_slice(&cell.premultiplied_rgba[src..src + cw * 4]);
+        }
+    }
+    if let Some(dir) = std::env::var_os("ANICRAFT_SCRATCH") {
+        write_png(&Path::new(&dir).join("girl_mouth_shapes.png"), u32::try_from(sheet_w).unwrap(), u32::try_from(sheet_h).unwrap(), &sheet);
+    }
+}
+
 #[test]
 fn imports_are_deterministic() {
     let Some(a) = load("extracted/Boy/Ch Media/Gathered Media/A boy character.ai") else { return };

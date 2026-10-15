@@ -167,6 +167,18 @@ impl ArtNode {
         Some(node)
     }
 
+    /// [`Self::find_path`] for editing: the node to change visibility, opacity and the like.
+    pub fn find_path_mut(&mut self, names: &[&str]) -> Option<&mut Self> {
+        let mut node = self;
+        for name in names {
+            node = match &mut node.kind {
+                ArtKind::Group(children) => children.iter_mut().find(|c| c.name == *name)?,
+                ArtKind::Raster { .. } | ArtKind::Vector { .. } => return None,
+            };
+        }
+        Some(node)
+    }
+
     /// Names of every node in this subtree, depth first (this node's name first).
     #[must_use]
     pub fn names(&self) -> Vec<&str> {
