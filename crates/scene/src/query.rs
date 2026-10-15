@@ -20,6 +20,26 @@ pub struct LayerNode {
     pub children: Vec<Self>,
 }
 
+/// Counts over a whole document, see [`Document::stats`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DocumentStats {
+    pub scenes: u32,
+    /// Sum of the lengths of all scenes in frames.
+    pub total_frames: u32,
+    /// Layers in scenes and symbols.
+    pub layers: u32,
+    /// Keyframes in scenes and symbols.
+    pub keyframes: u32,
+    /// Top-level elements in all keyframes (group members not counted).
+    pub elements: u32,
+    pub symbols: u32,
+    pub bitmaps: u32,
+    pub sounds: u32,
+    pub fonts: u32,
+    pub videos: u32,
+    pub folders: u32,
+}
+
 /// What a [`Reference`] points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RefKind {
@@ -238,6 +258,32 @@ impl Document {
     #[must_use]
     pub fn symbol(&self, name: &str) -> Option<&Symbol> {
         self.library.find_symbol(name)
+    }
+
+    /// Counts for a status line or a tool's `document info` answer.
+    #[must_use]
+    pub fn stats(&self) -> DocumentStats {
+        let mut s = DocumentStats { scenes: usize_to_u32_sat(self.scenes.len()), total_frames: self.total_frames(), ..DocumentStats::default() };
+        for item in &self.library.items {
+            let slot = match item {
+                LibraryItem::Symbol(_) => &mut s.symbols,
+                LibraryItem::Bitmap(_) => &mut s.bitmaps,
+                LibraryItem::Sound(_) => &mut s.sounds,
+                LibraryItem::Font(_) => &mut s.fonts,
+                LibraryItem::Video(_) => &mut s.videos,
+                LibraryItem::Folder(_) => &mut s.folders,
+            };
+            *slot = slot.saturating_add(1);
+        }
+        for id in self.timeline_ids() {
+            let Some(tl) = self.timeline(&id) else { continue };
+            s.layers = s.layers.saturating_add(usize_to_u32_sat(tl.layers.len()));
+            for frame in tl.layers.iter().flat_map(|l| l.frames.iter()) {
+                s.keyframes = s.keyframes.saturating_add(1);
+                s.elements = s.elements.saturating_add(usize_to_u32_sat(frame.elements.len()));
+            }
+        }
+        s
     }
 
     /// Keyframe count over the whole document, for statistics.

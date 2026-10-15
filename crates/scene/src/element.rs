@@ -213,6 +213,13 @@ impl SymbolInstance {
         self.color = effect.to_transform();
     }
 
+    /// The symbol kind that decides how the instance plays: its own `symbolType`, else the library item's kind, else
+    /// a movie clip (XFL's default).
+    #[must_use]
+    pub fn effective_kind(&self, library: &crate::Library) -> SymbolKind {
+        self.symbol_type.or_else(|| library.find_symbol(&self.library_item_name).map(|s| s.kind)).unwrap_or_default()
+    }
+
     /// The playback mode graphics use: the stored one, or [`LoopMode::Loop`].
     #[must_use]
     pub fn effective_loop_mode(&self) -> LoopMode {

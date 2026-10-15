@@ -404,6 +404,13 @@ impl Frame {
         frame >= self.index && frame < self.end()
     }
 
+    /// The ease that applies to `target`: its own entry, else the `All` entry.
+    #[must_use]
+    pub fn ease_for(&self, target: EaseTarget) -> Option<&EaseCurve> {
+        let own = self.eases.iter().find(|e| e.target == target);
+        own.or_else(|| self.eases.iter().find(|e| e.target == EaseTarget::All)).map(|e| &e.curve)
+    }
+
     /// True when the frame has no elements.
     #[must_use]
     pub const fn is_blank(&self) -> bool {

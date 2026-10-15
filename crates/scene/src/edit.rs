@@ -13,7 +13,7 @@ use crate::document::{Document, LAYER_COLORS, TimelineId};
 use crate::element::{Element, LoopMode, SymbolInstance, SymbolKind};
 use crate::error::SceneError;
 use crate::library::{FolderItem, Library, LibraryItem, Symbol, validate_item_name};
-use crate::timeline::{Frame, KEY_MODE_CLASSIC_TWEEN, KEY_MODE_SHAPE_TWEEN, Layer, LayerKind, Timeline, TweenType};
+use crate::timeline::{Frame, KEY_MODE_CLASSIC_TWEEN, KEY_MODE_SHAPE_TWEEN, LabelType, Layer, LayerKind, Timeline, TweenType};
 
 /// Most frames a timeline may grow to through the editing helpers (Animate's own cap is 16 000).
 pub const MAX_FRAMES: u32 = 100_000;
@@ -766,6 +766,108 @@ fn rename_references(tl: &mut Timeline, renames: &HashMap<String, String>) {
             }
         }
     }
+}
+
+/// Deletes a library item that nothing refers to. Folders must be empty. Returns the removed item (its media stays
+/// in the [`crate::MediaStore`]; call [`crate::MediaStore::remove`] to free it).
+///
+/// # Errors
+/// [`SceneError::NoSuchItem`], or [`SceneError::InUse`] when the item is referenced or the folder is not empty.
+pub fn remove_library_item(doc: &mut Document, name: &str) -> Result<LibraryItem, SceneError> {
+    let Some(item) = doc.library.find(name) else { return Err(SceneError::NoSuchItem(name.to_owned())) };
+    if matches!(item, LibraryItem::Folder(_)) {
+        let prefix = format!("{name}/");
+        if doc.library.items.iter().any(|i| i.name().starts_with(&prefix)) {
+            return Err(SceneError::InUse(name.to_owned()));
+        }
+    } else if !doc.references_to(name).is_empty() {
+        return Err(SceneError::InUse(name.to_owned()));
+    }
+    doc.library.remove(name).ok_or_else(|| SceneError::NoSuchItem(name.to_owned()))
+}
+
+/// Copies a symbol under a new name (with a fresh `itemID`); the copy shares nothing with the original.
+///
+/// # Errors
+/// [`SceneError::NoSuchItem`] when `source` is not a symbol, name errors for `new_name`.
+pub fn duplicate_symbol(doc: &mut Document, source: &str, new_name: &str) -> Result<(), SceneError> {
+    validate_item_name(new_name)?;
+    if doc.library.find_index(new_name).is_some() {
+        return Err(SceneError::NameTaken(new_name.to_owned()));
+    }
+    let Some(original) = doc.library.find_symbol(source) else { return Err(SceneError::NoSuchItem(source.to_owned())) };
+    let mut copy = original.clone();
+    new_name.clone_into(&mut copy.name);
+    copy.item_id = doc.library.fresh_item_id(new_name);
+    copy.href = None;
+    new_name.rsplit('/').next().unwrap_or(new_name).clone_into(&mut copy.timeline.name);
+    ensure_folders(&mut doc.library, new_name);
+    doc.library.items.push(LibraryItem::Symbol(Box::new(copy)));
+    Ok(())
+}
+
+/// Sets or clears the label of the keyframe covering `frame`.
+///
+/// # Errors
+/// Unknown timeline, layer or keyframe.
+pub fn set_frame_label(doc: &mut Document, id: &TimelineId, layer: usize, frame: u32, label: Option<(&str, LabelType)>) -> Result<(), SceneError> {
+    let k = keyframe_mut(doc, id, layer, frame)?;
+    if let Some((text, kind)) = label {
+        k.label = Some(text.to_owned());
+        k.label_type = Some(kind);
+    } else {
+        k.label = None;
+        k.label_type = None;
+    }
+    Ok(())
+}
+
+/// Moves the keyframe starting at `from` so it starts at `to`, keeping its length.
+///
+/// # Errors
+/// [`SceneError::NoFrame`] when no keyframe starts at `from`, [`SceneError::Occupied`] when the new span would
+/// overlap another keyframe, the frame limit.
+pub fn move_keyframe(doc: &mut Document, id: &TimelineId, layer: usize, from: u32, to: u32) -> Result<(), SceneError> {
+    check_frame(to)?;
+    let l = layer_mut(doc, id, layer)?;
+    l.sort_frames();
+    let pos = l.frames.iter().position(|f| f.index == from).ok_or(SceneError::NoFrame { layer, frame: from })?;
+    let duration = l.frames.get(pos).map_or(1, |f| f.duration);
+    let new_end = to.saturating_add(duration);
+    if l.frames.iter().enumerate().any(|(i, f)| i != pos && f.index < new_end && to < f.end()) {
+        return Err(SceneError::Occupied { layer, frame: to });
+    }
+    let mut frame = l.frames.remove(pos);
+    frame.index = to;
+    let at = l.frames.partition_point(|f| f.index < to);
+    l.frames.insert(at, frame);
+    clear_dangling_tweens(l);
+    Ok(())
+}
+
+/// Copies a layer (frames, elements and flags) and inserts the copy directly above it, named `"<name> copy"`.
+/// Returns the index of the copy. Layers nested under a folder are not copied with it.
+///
+/// # Errors
+/// Unknown timeline or layer, the layer limit.
+pub fn duplicate_layer(doc: &mut Document, id: &TimelineId, layer: usize) -> Result<usize, SceneError> {
+    let tl = timeline_mut(doc, id)?;
+    if tl.layers.len() >= MAX_LAYERS {
+        return Err(SceneError::LimitExceeded("layer count"));
+    }
+    let count = tl.layers.len();
+    let mut copy = tl.layers.get(layer).ok_or(SceneError::NoSuchLayer { layer, count })?.clone();
+    copy.name = format!("{} copy", copy.name);
+    copy.autoname = false;
+    for l in &mut tl.layers {
+        if let Some(p) = l.parent_layer_index.as_mut()
+            && *p >= layer
+        {
+            *p = p.saturating_add(1);
+        }
+    }
+    tl.layers.insert(layer, copy);
+    Ok(layer)
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! The document: stage settings, scenes and the library.
 
-use anim_core::{FrameRate, Rgba8};
+use anim_core::{FrameRate, Rgba8, Tick};
 use serde::{Deserialize, Serialize};
 
 use crate::element::SymbolKind;
@@ -89,6 +89,18 @@ impl Document {
         } else {
             FrameRate::new(12, 1)
         }
+    }
+
+    /// Start time of `frame` on the document's clock.
+    #[must_use]
+    pub fn frame_to_tick(&self, frame: u32) -> Tick {
+        self.frame_rate_exact().tick_of(i64::from(frame))
+    }
+
+    /// The frame that contains time `t` (negative times give frame 0).
+    #[must_use]
+    pub fn tick_to_frame(&self, t: Tick) -> u32 {
+        u32::try_from(self.frame_rate_exact().frame_at(t).max(0)).unwrap_or(u32::MAX)
     }
 
     /// The timeline `id` names.

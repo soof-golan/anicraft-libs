@@ -47,6 +47,12 @@ pub enum SceneError {
     /// A limit (frames, layers, items, bytes) was exceeded.
     #[error("limit exceeded: {0}")]
     LimitExceeded(&'static str),
+    /// The span would overlap another keyframe.
+    #[error("frame {frame} on layer {layer} is occupied by another keyframe")]
+    Occupied { layer: usize, frame: u32 },
+    /// The item is still referenced (or the folder still has contents).
+    #[error("library item {0:?} is still in use")]
+    InUse(String),
     /// A symbol cannot contain itself.
     #[error("symbol {0:?} would contain itself")]
     Cycle(String),

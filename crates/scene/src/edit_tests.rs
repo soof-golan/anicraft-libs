@@ -434,3 +434,92 @@ fn json_and_postcard_round_trip_a_busy_document() {
     let bytes = postcard::to_allocvec(&d).unwrap();
     assert_eq!(postcard::from_bytes::<Document>(&bytes).unwrap(), d);
 }
+
+#[test]
+fn remove_library_item_refuses_items_in_use() {
+    let mut d = doc();
+    d.add_symbol("f/a", SymbolKind::Graphic).unwrap();
+    add_symbol_instance(&mut d, &scene(), 0, 0, "f/a", Affine::IDENTITY).unwrap();
+    assert!(matches!(remove_library_item(&mut d, "f/a"), Err(SceneError::InUse(_))));
+    assert!(matches!(remove_library_item(&mut d, "f"), Err(SceneError::InUse(_))));
+    d.scenes[0].layers[0].frames[0].elements.clear();
+    assert!(remove_library_item(&mut d, "f/a").is_ok());
+    assert!(remove_library_item(&mut d, "f").is_ok());
+    assert!(matches!(remove_library_item(&mut d, "f"), Err(SceneError::NoSuchItem(_))));
+}
+
+#[test]
+fn duplicate_symbol_copies_independently() {
+    let mut d = doc();
+    d.add_symbol("a", SymbolKind::MovieClip).unwrap();
+    d.library.find_symbol_mut("a").unwrap().timeline.layers[0].frames[0].elements.push(square(0.0, 0.0, 4.0));
+    duplicate_symbol(&mut d, "a", "dup/b").unwrap();
+    let (a, b) = (d.library.find_symbol("a").unwrap(), d.library.find_symbol("dup/b").unwrap());
+    assert_ne!(a.item_id, b.item_id);
+    assert_eq!(a.timeline.layers, b.timeline.layers);
+    assert_eq!(b.timeline.name, "b");
+    assert!(d.library.find("dup").is_some());
+    assert!(matches!(duplicate_symbol(&mut d, "a", "a"), Err(SceneError::NameTaken(_))));
+    assert!(matches!(duplicate_symbol(&mut d, "zzz", "q"), Err(SceneError::NoSuchItem(_))));
+}
+
+#[test]
+fn labels_move_keyframe_and_duplicate_layer() {
+    let mut d = two_key_doc();
+    set_frame_label(&mut d, &scene(), 0, 7, Some(("end", LabelType::Anchor))).unwrap();
+    assert_eq!(d.scenes[0].labels(), vec![(5, "end")]);
+    set_frame_label(&mut d, &scene(), 0, 5, None).unwrap();
+    assert!(d.scenes[0].labels().is_empty());
+    assert!(set_frame_label(&mut d, &scene(), 0, 99, None).is_err());
+
+    move_keyframe(&mut d, &scene(), 0, 5, 8).unwrap();
+    assert_eq!(spans(&d, 0), vec![(0, 5), (8, 5)]);
+    assert!(matches!(move_keyframe(&mut d, &scene(), 0, 8, 3), Err(SceneError::Occupied { .. })));
+    assert!(matches!(move_keyframe(&mut d, &scene(), 0, 6, 9), Err(SceneError::NoFrame { .. })));
+    assert!(matches!(move_keyframe(&mut d, &scene(), 0, 0, 5), Err(SceneError::Occupied { .. })));
+    move_keyframe(&mut d, &scene(), 0, 0, 2).unwrap();
+    assert_eq!(spans(&d, 0), vec![(2, 5), (8, 5)]);
+}
+
+#[test]
+fn duplicate_layer_inserts_above_and_remaps_parents() {
+    let mut d = doc();
+    add_layer(&mut d, &scene(), 1, Some("F"), LayerKind::Folder).unwrap();
+    add_layer(&mut d, &scene(), 2, Some("c"), LayerKind::Normal).unwrap();
+    set_layer_parent(&mut d, &scene(), 2, Some(1)).unwrap();
+    let at = duplicate_layer(&mut d, &scene(), 1).unwrap();
+    assert_eq!(at, 1);
+    let names: Vec<&str> = d.scenes[0].layers.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(names, vec!["Layer_1", "F copy", "F", "c"]);
+    assert_eq!(d.scenes[0].layers[3].parent_layer_index, Some(2));
+    assert!(d.validate().is_empty());
+    assert!(duplicate_layer(&mut d, &scene(), 9).is_err());
+}
+
+#[test]
+fn stats_ticks_and_instance_kind() {
+    let mut d = Document::new(100.0, 100.0, 30.0);
+    d.add_symbol("g", SymbolKind::Graphic).unwrap();
+    d.add_symbol("m/x", SymbolKind::Button).unwrap();
+    add_symbol_instance(&mut d, &scene(), 0, 0, "g", Affine::IDENTITY).unwrap();
+    let s = d.stats();
+    assert_eq!((s.scenes, s.symbols, s.folders, s.layers, s.keyframes, s.elements), (1, 2, 1, 3, 3, 1));
+    assert_eq!(d.tick_to_frame(d.frame_to_tick(45)), 45);
+    assert_eq!(d.tick_to_frame(anim_core::Tick(-5)), 0);
+    let mut inst = SymbolInstance::new("m/x", Affine::IDENTITY);
+    assert_eq!(inst.effective_kind(&d.library), SymbolKind::Button);
+    inst.symbol_type = Some(SymbolKind::Graphic);
+    assert_eq!(inst.effective_kind(&d.library), SymbolKind::Graphic);
+    assert_eq!(SymbolInstance::new("nope", Affine::IDENTITY).effective_kind(&d.library), SymbolKind::MovieClip);
+}
+
+#[test]
+fn ease_lookup_falls_back_to_all() {
+    use crate::timeline::{EaseCurve, EaseTarget, TweenEase};
+    let mut f = Frame::blank(0, 4);
+    assert!(f.ease_for(EaseTarget::Rotation).is_none());
+    f.eases.push(TweenEase { target: EaseTarget::All, curve: EaseCurve::Named("cubicIn".into()) });
+    f.eases.push(TweenEase { target: EaseTarget::Rotation, curve: EaseCurve::Custom(vec![[0.0, 0.0], [1.0, 1.0]]) });
+    assert!(matches!(f.ease_for(EaseTarget::Rotation), Some(EaseCurve::Custom(_))));
+    assert!(matches!(f.ease_for(EaseTarget::Position), Some(EaseCurve::Named(n)) if n == "cubicIn"));
+}
