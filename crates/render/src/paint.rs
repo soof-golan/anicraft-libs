@@ -6,6 +6,7 @@ use anim_display::{GRADIENT_EXTENT, Gradient, ImageId, ImageStore, Interpolation
 use tiny_skia::{Color, FilterQuality, GradientStop, LinearGradient, Pattern, PixmapRef, RadialGradient, Shader, SpreadMode, Transform};
 
 use crate::convert;
+use crate::mip::{self, MipCache};
 
 /// Why a paint could not become a shader. Both outcomes mean "draw nothing".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,25 +24,77 @@ const LINEAR_RGB_STEPS: u16 = 32;
 /// Focal points are kept strictly inside the gradient circle.
 const MAX_FOCAL: f64 = 0.99;
 
+/// The pixels a bitmap is sampled from: the image itself, or a mip level when it is drawn much smaller.
+#[derive(Debug, Clone, Copy)]
+pub struct Sampled<'a> {
+    pub pixmap: PixmapRef<'a>,
+    /// 0 for the full-size image; each level is half the size of the one before.
+    pub level: u8,
+}
+
+impl Sampled<'_> {
+    /// Maps level pixels to full-size image pixels.
+    pub fn level_to_full(self) -> Affine {
+        Affine::scale(mip::level_scale(self.level))
+    }
+}
+
+/// Whether the image has pixels and a buffer big enough for its size.
+pub fn is_usable(image: &anim_display::Image) -> bool {
+    PixmapRef::from_bytes(&image.premultiplied_rgba, image.width, image.height).is_some()
+}
+
+/// Mip level wanted for `image` drawn through `to_layer` (image pixels to layer pixels).
+pub fn wanted_level(image: &anim_display::Image, to_layer: Affine, smoothing: bool) -> u8 {
+    if !smoothing {
+        return 0;
+    }
+    let (sx, sy) = convert::axis_scales(to_layer);
+    mip::level_for((sx * sy).sqrt(), image.width, image.height)
+}
+
+/// Picks the pixels to sample for `id` drawn through `to_layer` (image pixels to layer pixels): a mip level from
+/// `mips` when the image is smoothed and drawn at under half size and the level was built, else the image.
+pub fn sample<'a>(id: ImageId, to_layer: Affine, smoothing: bool, images: &'a ImageStore, mips: &'a MipCache) -> Result<Sampled<'a>, PaintIssue> {
+    let image = images.get(id).ok_or(PaintIssue::MissingImage)?;
+    let level = wanted_level(image, to_layer, smoothing);
+    if level > 0
+        && let Some(mip) = mips.get(id, level)
+        && let Some(pixmap) = PixmapRef::from_bytes(&mip.premultiplied_rgba, mip.width, mip.height)
+    {
+        return Ok(Sampled { pixmap, level });
+    }
+    let pixmap = PixmapRef::from_bytes(&image.premultiplied_rgba, image.width, image.height).ok_or(PaintIssue::MissingImage)?;
+    Ok(Sampled { pixmap, level: 0 })
+}
+
 /// Builds the shader for `paint`. `space` maps the paint's local space (the path's own coordinates) into the
-/// coordinates of the path handed to tiny-skia.
-pub fn shader<'a>(paint: &Paint, space: Affine, images: &'a ImageStore) -> Result<Shader<'a>, PaintIssue> {
+/// coordinates of the path handed to tiny-skia; `to_layer` maps local space all the way to layer pixels (the two
+/// differ for strokes, where tiny-skia applies part of the matrix itself) and decides bitmap mip levels.
+pub fn shader<'a>(paint: &Paint, space: Affine, to_layer: Affine, images: &'a ImageStore, mips: &'a MipCache) -> Result<Shader<'a>, PaintIssue> {
     match paint {
         Paint::Solid(c) => Ok(Shader::SolidColor(convert::color(*c))),
         Paint::Linear(g) => linear(g, space),
         Paint::Radial(g) => radial(g, space),
-        Paint::Bitmap { image, transform, repeat, smoothing } => bitmap(*image, space * *transform, *repeat, *smoothing, images),
+        Paint::Bitmap { image, transform, repeat, smoothing } => bitmap(*image, space * *transform, to_layer * *transform, *repeat, *smoothing, images, mips),
     }
 }
 
 /// A bilinear/nearest pattern over the pixels of `image`, mapped by `to_space` (image pixels to path space).
-pub fn bitmap(image: ImageId, to_space: Affine, repeat: bool, smoothing: bool, images: &ImageStore) -> Result<Shader<'_>, PaintIssue> {
-    let img = images.get(image).ok_or(PaintIssue::MissingImage)?;
-    let pixmap = PixmapRef::from_bytes(&img.premultiplied_rgba, img.width, img.height).ok_or(PaintIssue::MissingImage)?;
-    let ts = invertible(to_space)?;
+pub fn bitmap<'a>(
+    image: ImageId,
+    to_space: Affine,
+    to_layer: Affine,
+    repeat: bool,
+    smoothing: bool,
+    images: &'a ImageStore,
+    mips: &'a MipCache,
+) -> Result<Shader<'a>, PaintIssue> {
+    let sampled = sample(image, to_layer, smoothing, images, mips)?;
+    let ts = invertible(to_space * sampled.level_to_full())?;
     let spread = if repeat { SpreadMode::Repeat } else { SpreadMode::Pad };
     let quality = if smoothing { FilterQuality::Bilinear } else { FilterQuality::Nearest };
-    Ok(Pattern::new(pixmap, spread, quality, 1.0, ts))
+    Ok(Pattern::new(sampled.pixmap, spread, quality, 1.0, ts))
 }
 
 const fn spread_mode(spread: Spread) -> SpreadMode {
@@ -160,16 +213,32 @@ mod tests {
     fn missing_image_is_reported() {
         let store = ImageStore::new();
         let paint = Paint::Bitmap { image: ImageId(3), transform: Affine::IDENTITY, repeat: false, smoothing: true };
-        assert_eq!(shader(&paint, Affine::IDENTITY, &store).unwrap_err(), PaintIssue::MissingImage);
+        assert_eq!(shader(&paint, Affine::IDENTITY, Affine::IDENTITY, &store, &MipCache::default()).unwrap_err(), PaintIssue::MissingImage);
     }
 
     #[test]
     fn degenerate_gradients_are_refused() {
         let store = ImageStore::new();
+        let mips = MipCache::default();
         let mut g = gradient(Interpolation::Rgb);
         g.transform = Affine::scale(0.0);
-        assert_eq!(shader(&Paint::Linear(g.clone()), Affine::IDENTITY, &store).unwrap_err(), PaintIssue::Degenerate);
+        assert_eq!(shader(&Paint::Linear(g.clone()), Affine::IDENTITY, Affine::IDENTITY, &store, &mips).unwrap_err(), PaintIssue::Degenerate);
         g.stops.clear();
-        assert_eq!(shader(&Paint::Radial(g), Affine::IDENTITY, &store).unwrap_err(), PaintIssue::Degenerate);
+        assert_eq!(shader(&Paint::Radial(g), Affine::IDENTITY, Affine::IDENTITY, &store, &mips).unwrap_err(), PaintIssue::Degenerate);
+    }
+
+    #[test]
+    fn small_smoothed_bitmaps_pick_a_mip_level() {
+        let mut store = ImageStore::new();
+        let id = store.insert(anim_display::Image::new(8, 8, vec![255; 8 * 8 * 4]).unwrap());
+        let mut mips = MipCache::default();
+        let image = store.get(id).unwrap();
+        assert_eq!(wanted_level(image, Affine::scale(0.2), true), 2);
+        assert_eq!(wanted_level(image, Affine::scale(0.2), false), 0, "nearest sampling never uses mips");
+        assert_eq!(sample(id, Affine::scale(0.2), true, &store, &mips).unwrap().level, 0, "an unbuilt level falls back to the image");
+        assert!(mips.ensure(&store, id, 2));
+        let sampled = sample(id, Affine::scale(0.2), true, &store, &mips).unwrap();
+        assert_eq!((sampled.level, sampled.pixmap.width()), (2, 2));
+        assert_eq!(sampled.level_to_full(), Affine::scale(4.0));
     }
 }

@@ -5,6 +5,7 @@ use anim_display::{DisplayList, Image, ImageStore};
 
 use crate::draw::{self, Ctx};
 use crate::error::RenderError;
+use crate::mip::MipCache;
 use crate::options::{Background, RenderOptions};
 use crate::pool::Pool;
 use crate::px::PxRect;
@@ -69,7 +70,7 @@ impl Renderer {
         if let Some(color) = backdrop(list, options.background) {
             root.pm.fill(convert::color(color));
         }
-        let mut cx = Ctx { images, antialias: options.antialias, pool: &mut self.pool, stats: &mut self.stats };
+        let mut cx = Ctx { images, antialias: options.antialias, pool: &mut self.pool, stats: &mut self.stats, mips: MipCache::default() };
         draw::nodes(&mut cx, &mut root, &list.nodes, options.view, 0);
         self.stats.peak_layer_bytes = self.pool.peak_bytes().saturating_sub(root_bytes);
         let bytes = self.pool.release(root);

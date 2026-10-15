@@ -239,6 +239,79 @@ fn rotated_bitmap_has_smooth_edges() {
     save("paints_bitmap_rotated", &img);
 }
 
+/// A `size` x `size` image of one-pixel black and white checks, the worst case for aliasing.
+fn fine_checker(store: &mut anim_display::ImageStore, size: u32) -> ImageId {
+    let mut pixels = Vec::new();
+    for y in 0..size {
+        for x in 0..size {
+            let v = if (x + y) % 2 == 0 { 255 } else { 0 };
+            pixels.extend_from_slice(&[v, v, v, 255]);
+        }
+    }
+    store.insert(Image::new(size, size, pixels).unwrap())
+}
+
+#[test]
+fn heavily_minified_smooth_bitmaps_average_instead_of_aliasing() {
+    for scale in [0.25, 0.125, 0.1, 1.0 / 3.0] {
+        let mut scene = Scene::new(64, 64);
+        let id = fine_checker(&mut scene.images, 240);
+        scene.add(bitmap_node(id, Affine::scale(scale), true));
+        let img = scene.render();
+        let side = ((240.0 * scale).floor() as u32).min(62);
+        for y in 1..side - 1 {
+            for x in 1..side - 1 {
+                assert_px(&img, x, y, [127, 127, 127, 255], 14);
+            }
+        }
+        if scale == 0.125 {
+            save("paints_minified_checker", &img);
+        }
+    }
+}
+
+#[test]
+fn minified_bitmap_keeps_its_exact_extent() {
+    let mut scene = Scene::with_background(40, 40, Some(RED));
+    let id = fine_checker(&mut scene.images, 250);
+    scene.add(bitmap_node(id, Affine::translate((5.0, 5.0)) * Affine::scale(0.1), true));
+    let img = scene.render();
+    // 250 * 0.1 = 25 pixels exactly: the edge pixels are fully covered, the ones beyond untouched.
+    assert_px(&img, 5, 20, [127, 127, 127, 255], 20);
+    assert_px(&img, 29, 20, [127, 127, 127, 255], 20);
+    assert_px(&img, 4, 20, [255, 0, 0, 255], 0);
+    assert_px(&img, 30, 20, [255, 0, 0, 255], 0);
+    assert_px(&img, 20, 4, [255, 0, 0, 255], 0);
+    assert_px(&img, 20, 30, [255, 0, 0, 255], 0);
+}
+
+#[test]
+fn minified_bitmap_fill_and_rotated_bitmap_also_average() {
+    let mut scene = Scene::new(40, 40);
+    let id = fine_checker(&mut scene.images, 64);
+    scene.add(fill(rect_path(0.0, 0.0, 40.0, 40.0), Paint::Bitmap { image: id, transform: Affine::scale(0.2), repeat: true, smoothing: true }));
+    let img = scene.render();
+    for (x, y) in [(3, 3), (20, 20), (37, 12), (11, 30)] {
+        assert_px(&img, x, y, [127, 127, 127, 255], 14);
+    }
+    let mut rotated = Scene::new(40, 40);
+    let id = fine_checker(&mut rotated.images, 160);
+    rotated.add(bitmap_node(id, Affine::translate((20.0, 4.0)) * Affine::rotate(std::f64::consts::FRAC_PI_4) * Affine::scale(0.15), true));
+    let img = rotated.render();
+    assert_px(&img, 20, 18, [127, 127, 127, 255], 14);
+    assert_px(&img, 14, 24, [127, 127, 127, 255], 14);
+}
+
+#[test]
+fn unsmoothed_bitmaps_stay_pixel_exact_when_minified() {
+    let mut scene = Scene::new(8, 8);
+    let id = fine_checker(&mut scene.images, 16);
+    scene.add(bitmap_node(id, Affine::scale(0.5), false));
+    let img = scene.render();
+    // Nearest sampling: each output pixel is one source pixel, never an average.
+    assert!(count(&img, |px| px[0] != 0 && px[0] != 255) == 0);
+}
+
 #[test]
 fn stroke_with_gradient_paint() {
     let mut scene = Scene::new(100, 10);

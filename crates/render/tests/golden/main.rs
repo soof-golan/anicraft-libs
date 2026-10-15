@@ -29,6 +29,7 @@ mod filters;
 mod groups;
 mod mesh;
 mod paints;
+mod perf;
 mod robustness;
 mod shapes;
 mod showcase;

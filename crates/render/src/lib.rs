@@ -38,6 +38,7 @@ mod error;
 mod filters;
 mod group;
 mod mesh;
+mod mip;
 mod options;
 mod paint;
 mod par;
