@@ -16,6 +16,7 @@ anim-artwork = { path = "crates/artwork" }
 anim-core = { path = "crates/core" }
 anim-display = { path = "crates/display" }
 anim-render = { path = "crates/render" }
+anim-scene = { path = "crates/scene" }
 anim-shape = { path = "crates/shape" }
 
 # Craft crates, pinned by rev like the Craft apps do.
