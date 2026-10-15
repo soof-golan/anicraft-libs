@@ -1,0 +1,20 @@
+[package]
+name = "anim-lipsync"
+description = "Audio to visemes for AniCraft and CharCraft: offline analysis and live microphone lip sync, with no ML weights"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
