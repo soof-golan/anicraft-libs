@@ -1,0 +1,80 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR BSD-3-Clause"
+rust-version = "1.99"
+repository = "https://github.com/soof-golan/anicraft-libs"
+
+[workspace.dependencies]
+# Internal crates (see ARCHITECTURE.md for what each one owns).
+anim-core = { path = "crates/core" }
+anim-display = { path = "crates/display" }
+
+# Craft crates, pinned by rev like the Craft apps do.
+filmcraft-time = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-aac = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+filmcraft-prores = { git = "https://github.com/storytold/filmcraft", rev = "2c5ba7a72619935f0481f99d59409e0d1844b234" }
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb3de70e735c8ce87a59a7dedd47675", features = ["serde"] }
+craft-settings = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
+craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
+photocraft-psd = { git = "https://github.com/storytold/photocraft", rev = "c11ef015b7640b4dad43bf775373fd345902e382" }
+
+# External crates (versions match the Craft apps' lockfiles where they overlap).
+kurbo = { version = "0.13", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+postcard = { version = "1", features = ["alloc"] }
+thiserror = "2"
+rayon = "1.11"
+crossbeam-channel = "0.5"
+tiny-skia = "0.12"
+parley = "0.11"
+skrifa = "0.44"
+image = { version = "0.25", default-features = false, features = ["png"] }
+png = "0.18"
+gif = "0.14"
+cpal = "0.16"
+symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "wav", "pcm", "aac", "isomp4", "flac", "ogg", "vorbis"] }
+egui = "0.36.2"
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11"] }
+proptest = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# namtao.com/rust strict lints: teach Rust and prevent runtime panics.
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+unchecked_time_subtraction = "deny"
+todo = "deny"
+string_slice = "deny"
+panic_in_result_fn = "deny"
+panic = "deny"
+exit = "deny"
+as_conversions = "deny"
+dbg_macro = "deny"
+
+# Dev profile for everything except benchmarks (Craft convention: optimised deps, fast incremental builds).
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
