@@ -7,10 +7,15 @@
 //! this crate returns (paths, bounds, hit tests) is in pixels.
 
 pub mod codec;
+pub mod edges;
 pub mod error;
 pub mod number;
 pub mod segment;
+pub mod styles;
 
+pub use anim_display::{Cap, GradientStop, Interpolation, Join, Spread, StrokeScale};
 pub use codec::{CubicRun, encode_cubic, encode_edges, parse_cubics, parse_edges};
+pub use edges::{Edge, EdgeShape, XflEdge};
 pub use error::{ParseError, ParseErrorKind, ShapeError};
 pub use segment::{Segment, TWIPS_PER_PX};
+pub use styles::{BITMAP_MATRIX_SCALE, BitmapFill, FillStyle, GradientFill, OtherStroke, SolidStroke, StrokeKind, StrokeStyle, XflName};
