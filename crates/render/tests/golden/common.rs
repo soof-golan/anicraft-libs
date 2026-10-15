@@ -4,7 +4,7 @@
 
 use std::fs::File;
 use std::io::BufWriter;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anim_core::kurbo::{Circle, Shape};
 use anim_core::{Affine, BezPath, ColorTransform, Rgba8, Size};
@@ -148,9 +148,11 @@ pub fn max_diff(a: &Image, b: &Image) -> u8 {
 
 /// Where test output goes: `$ANIM_RENDER_SCRATCH`, or the shared scratch area, or the temp dir.
 pub fn scratch_dir() -> PathBuf {
+    // The shared scratch area only exists on the machine the agents work on; elsewhere never create it.
+    let shared = Path::new("/mnt/data/anim/scratch");
     let candidates = [
         std::env::var_os("ANIM_RENDER_SCRATCH").map(PathBuf::from),
-        Some(PathBuf::from("/mnt/data/anim/scratch/anim-render")),
+        shared.is_dir().then(|| shared.join("anim-render")),
         Some(std::env::temp_dir().join("anim-render")),
     ];
     candidates.into_iter().flatten().find(|dir| std::fs::create_dir_all(dir).is_ok()).unwrap_or_else(std::env::temp_dir)

@@ -286,7 +286,9 @@ fn content_bounds_cover_what_is_drawn() {
 
 #[test]
 fn hand_rolled_fuzz_never_panics() {
-    for seed in 0..120_u64 {
+    // 120 scenes by default; `ANIM_RENDER_FUZZ=20000 cargo test ...` runs a longer soak.
+    let scenes = std::env::var("ANIM_RENDER_FUZZ").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(120);
+    for seed in 0..scenes {
         let mut rng = Lcg(seed.wrapping_mul(7919).wrapping_add(13));
         let mut scene = Scene::new(24, 24);
         let id = scene.images.insert(Image::new(2, 2, vec![255; 16]).unwrap());
@@ -302,23 +304,31 @@ fn hand_rolled_fuzz_never_panics() {
 }
 
 fn wild(rng: &mut Lcg) -> f64 {
-    match rng.next_u32() % 12 {
+    match rng.next_u32() % 16 {
         0 => f64::NAN,
         1 => f64::INFINITY,
         2 => -1e30,
         3 => 1e12,
         4 => 0.0,
+        // Just inside and just outside the largest coordinate the renderer accepts (1e7 device pixels).
+        5 => 9.9e6,
+        6 => -9.9e6,
+        7 => 1.1e7,
+        8 => 1e-9,
         _ => rng.range(-30.0, 60.0),
     }
 }
 
 fn random_affine(rng: &mut Lcg) -> Affine {
-    if rng.next_u32() % 3 == 0 {
-        Affine::new([wild(rng), wild(rng), wild(rng), wild(rng), wild(rng), wild(rng)])
-    } else {
-        Affine::translate((rng.range(-20.0, 20.0), rng.range(-20.0, 20.0)))
-            * Affine::rotate(rng.range(-3.0, 3.0))
-            * Affine::scale_non_uniform(rng.range(0.2, 3.0), rng.range(0.2, 3.0))
+    match rng.next_u32() % 6 {
+        0 | 1 => Affine::new([wild(rng), wild(rng), wild(rng), wild(rng), wild(rng), wild(rng)]),
+        // Extreme but legal zoom levels.
+        2 => Affine::scale_non_uniform(10_f64.powf(rng.range(-6.0, 5.0)), 10_f64.powf(rng.range(-6.0, 5.0))),
+        _ => {
+            Affine::translate((rng.range(-20.0, 20.0), rng.range(-20.0, 20.0)))
+                * Affine::rotate(rng.range(-3.0, 3.0))
+                * Affine::scale_non_uniform(rng.range(0.2, 3.0), rng.range(0.2, 3.0))
+        }
     }
 }
 
