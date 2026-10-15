@@ -96,6 +96,24 @@ fn mimetype_is_stored_even_when_added_later_or_asked_to_deflate() {
 }
 
 #[test]
+fn large_entries_are_judged_by_a_sample_and_still_round_trip() {
+    let random = noise(2 * 1024 * 1024 + 123, 99);
+    let text = xml(3 * 1024 * 1024);
+    // Random head, repetitive tail: sampling says "incompressible", which only costs space, never correctness.
+    let mixed: Vec<u8> = random.iter().take(200_000).copied().chain(text.iter().copied()).collect();
+    let mut writer = ZipWriter::in_memory();
+    writer.add_file("random.mp3", &random).unwrap();
+    writer.add_file("text.xml", &text).unwrap();
+    writer.add_file("mixed.bin", &mixed).unwrap();
+    let container = Container::from_bytes(writer.finish().unwrap()).unwrap();
+    assert_eq!(container.find("random.mp3").unwrap().method, CompressionMethod::Stored);
+    assert_eq!(container.find("text.xml").unwrap().method, CompressionMethod::Deflate);
+    assert_eq!(container.read("random.mp3").unwrap(), random);
+    assert_eq!(container.read("text.xml").unwrap(), text);
+    assert_eq!(container.read("mixed.bin").unwrap(), mixed);
+}
+
+#[test]
 fn writer_honours_timestamps_levels_and_compression_choices() {
     let stamp = DosDateTime { year: 2024, month: 5, day: 17, hour: 13, minute: 45, second: 20 };
     let options = WriteOptions { compression: Compression::Deflate, level: 9, modified: stamp, zip64: Zip64::Auto };
@@ -202,6 +220,22 @@ fn lookups_ignore_case_escapes_separators_and_unicode_form() {
     assert!(container.find("LIBRARY/nothing.xml").is_none());
     assert!(matches!(container.read("LIBRARY/nothing.xml"), Err(ArchiveError::NotFound(_))));
     assert_eq!(container.read("Bin/X.DAT").unwrap(), b"bin/x.dat");
+}
+
+#[test]
+fn hrefs_resolve_to_library_entries() {
+    let mut writer = ZipWriter::in_memory();
+    for name in ["LIBRARY/Tween 1.xml", "LIBRARY/flash0.ai_2/Isolation Mode/&#060Clip Group&#062.xml", "bin/M 1 1418138545.dat"] {
+        writer.add_file(name, name.as_bytes()).unwrap();
+    }
+    let container = Container::from_bytes(writer.finish().unwrap()).unwrap();
+    // The href as an XML parser hands it over: the file name still carries Animate's own `&#060` escapes.
+    let nested = container.find_href("flash0.ai_2/Isolation Mode/&#060Clip Group&#062.xml", "LIBRARY").unwrap();
+    assert_eq!(nested.name, "LIBRARY/flash0.ai_2/Isolation Mode/&#060Clip Group&#062.xml");
+    assert_eq!(nested.display_name(), "LIBRARY/flash0.ai_2/Isolation Mode/<Clip Group>.xml");
+    assert!(container.find_href("tween 1.XML", "LIBRARY").is_some());
+    assert!(container.find_href("M 1 1418138545.dat", "bin").is_some());
+    assert!(container.find_href("missing.xml", "LIBRARY").is_none());
 }
 
 #[test]
