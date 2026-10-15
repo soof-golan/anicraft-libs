@@ -1,0 +1,20 @@
+[package]
+name = "anim-morph"
+description = "Animate shape tweens: contour correspondence, shape hints and interpolation of fills and strokes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anim-core = { workspace = true }
+anim-display = { workspace = true }
+anim-shape = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

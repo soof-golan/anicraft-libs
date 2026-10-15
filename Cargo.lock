@@ -95,6 +95,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "anim-morph"
+version = "0.1.0"
+dependencies = [
+ "anim-core",
+ "anim-display",
+ "anim-shape",
+ "proptest",
+ "serde",
+]
+
+[[package]]
 name = "anim-render"
 version = "0.1.0"
 dependencies = [

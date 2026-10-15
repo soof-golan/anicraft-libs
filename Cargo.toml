@@ -15,6 +15,7 @@ anim-archive = { path = "crates/archive" }
 anim-artwork = { path = "crates/artwork" }
 anim-core = { path = "crates/core" }
 anim-display = { path = "crates/display" }
+anim-morph = { path = "crates/morph" }
 anim-render = { path = "crates/render" }
 anim-scene = { path = "crates/scene" }
 anim-shape = { path = "crates/shape" }
