@@ -18,7 +18,7 @@ use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, GenericFa
 use parley::{Layout, LayoutContext};
 
 use crate::extract::copy_lines;
-use crate::fonts::Fonts;
+use crate::fonts::{Fonts, ResolvedFont};
 use crate::guard::guarded;
 use crate::layout::{ParaLayout, ParagraphInfo, TextLayout};
 use crate::model::{Alignment, Direction, Paragraph, RichText, Run};
@@ -276,20 +276,20 @@ impl TextEngine {
             sanitizer.push(&mut ptext, &run.text);
             spans.push(from..ptext.len());
         }
-        let families: Vec<Vec<FontFamilyName<'static>>> = paragraph.runs.iter().map(|r| self.family_list(r)).collect();
+        let fonts: Vec<RunFont> = paragraph.runs.iter().map(|r| self.run_font(r)).collect();
         let default_run = paragraph.runs.first().cloned().unwrap_or_default();
-        let default_families = families.first().cloned().unwrap_or_else(|| vec![FontFamilyName::Generic(GenericFamily::SansSerif)]);
+        let default_font = fonts.first().cloned().unwrap_or_else(|| RunFont::new(&default_run));
 
         let language = self.language;
         let mut builder = self.lcx.ranged_builder(&mut self.fonts.cx, &ptext, 1.0, false);
-        for property in style_properties(&default_run, &default_families, language) {
+        for property in style_properties(&default_run, &default_font, language) {
             builder.push_default(property);
         }
-        for ((run, family), span) in paragraph.runs.iter().zip(&families).zip(&spans) {
+        for ((run, font), span) in paragraph.runs.iter().zip(&fonts).zip(&spans) {
             if span.is_empty() {
                 continue;
             }
-            for property in style_properties(run, family, language) {
+            for property in style_properties(run, font, language) {
                 builder.push(property, span.clone());
             }
             let spacing = f64_to_f32(finite(run.letter_spacing, 0.0).clamp(-MAX_EXTENT, MAX_EXTENT));
@@ -316,11 +316,27 @@ impl TextEngine {
         }
     }
 
-    /// The family list of a run: the author's families, then the fallback chains of the scripts in its text, then the
-    /// generic sans serif.
-    fn family_list(&mut self, run: &Run) -> Vec<FontFamilyName<'static>> {
-        let mut list: Vec<FontFamilyName<'static>> =
-            FontFamilyName::parse_css_list(&run.family).flatten().take(MAX_FAMILIES).map(FontFamilyName::into_owned).collect();
+    /// The font of a run: the author's families (a name that is not an installed family is resolved like
+    /// [`resolve_font_name`](Self::resolve_font_name) does, and a style in the name adds to the run's), then the fallback
+    /// chains of the scripts in its text, then the generic sans serif.
+    fn run_font(&mut self, run: &Run) -> RunFont {
+        let (mut bold, mut italic) = (run.bold, run.italic);
+        let mut list: Vec<FontFamilyName<'static>> = Vec::new();
+        for entry in FontFamilyName::parse_css_list(&run.family).flatten().take(MAX_FAMILIES) {
+            let entry = entry.into_owned();
+            if let FontFamilyName::Named(name) = &entry
+                && !self.fonts.has_family(name)
+            {
+                let resolved = self.fonts.resolve(name);
+                if self.fonts.has_family(&resolved.family) {
+                    bold |= resolved.bold;
+                    italic |= resolved.italic;
+                    list.push(FontFamilyName::Named(Cow::Owned(resolved.family)));
+                    continue;
+                }
+            }
+            list.push(entry);
+        }
         let kana = run.text.chars().any(|c| matches!(u32::from(c), 0x3040..=0x30FF));
         for script in scripts_in(&run.text, 4) {
             let mut chain = self.fonts.chain(script);
@@ -336,7 +352,30 @@ impl TextEngine {
             }
         }
         list.push(FontFamilyName::Generic(GenericFamily::SansSerif));
-        list
+        RunFont { families: list, bold, italic }
+    }
+
+    /// Works out which installed family and style a font name from a document stands for: a family name, a PostScript
+    /// name (`Arial-BoldMT`, `MyriadPro-Regular`), a full name (`Arial Bold`), or the name of a font this machine
+    /// lacks (for the well-known ones a metric-compatible substitute is used when installed, `Arial` becoming
+    /// `Liberation Sans`). Importers call this to fill [`Run::family`], [`Run::bold`] and [`Run::italic`]. Layout also
+    /// applies it to family names that are not installed, so passing the raw name as the family works too.
+    pub fn resolve_font_name(&mut self, name: &str) -> ResolvedFont {
+        self.fonts.resolve(name)
+    }
+}
+
+/// The families and style flags a run is shaped with.
+#[derive(Debug, Clone)]
+struct RunFont {
+    families: Vec<FontFamilyName<'static>>,
+    bold: bool,
+    italic: bool,
+}
+
+impl RunFont {
+    fn new(run: &Run) -> Self {
+        Self { families: vec![FontFamilyName::Generic(GenericFamily::SansSerif)], bold: run.bold, italic: run.italic }
     }
 }
 
@@ -371,13 +410,13 @@ fn spacing_ranges(text: &str, base: usize) -> Vec<Range<usize>> {
     ranges
 }
 
-fn style_properties(run: &Run, families: &[FontFamilyName<'static>], language: Option<Language>) -> Vec<StyleProperty<'static, Rgba8>> {
+fn style_properties(run: &Run, font: &RunFont, language: Option<Language>) -> Vec<StyleProperty<'static, Rgba8>> {
     let size = finite(run.size, 16.0).clamp(MIN_SIZE, MAX_SIZE);
     vec![
-        StyleProperty::FontFamily(FontFamily::List(Cow::Owned(families.to_vec()))),
+        StyleProperty::FontFamily(FontFamily::List(Cow::Owned(font.families.clone()))),
         StyleProperty::FontSize(f64_to_f32(size)),
-        StyleProperty::FontWeight(FontWeight::new(if run.bold { 700.0 } else { 400.0 })),
-        StyleProperty::FontStyle(if run.italic { FontStyle::Italic } else { FontStyle::Normal }),
+        StyleProperty::FontWeight(FontWeight::new(if font.bold { 700.0 } else { 400.0 })),
+        StyleProperty::FontStyle(if font.italic { FontStyle::Italic } else { FontStyle::Normal }),
         StyleProperty::Brush(run.color),
         StyleProperty::Underline(run.underline),
         StyleProperty::Locale(language),

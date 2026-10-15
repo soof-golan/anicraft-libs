@@ -42,10 +42,12 @@ mod fonts;
 mod guard;
 mod layout;
 mod motion;
+mod names;
 mod outline;
 mod sanitize;
 
 pub use engine::{MAX_PARAGRAPHS, MAX_TEXT_BYTES, TextEngine};
+pub use fonts::ResolvedFont;
 pub use layout::{FontFace, Glyph, GlyphRun, Line, ParagraphInfo, TextLayout};
 pub use model::{Alignment, Direction, Paragraph, RichText, Run};
 pub use motion::{Affinity, Caret, Motion, Selection};
