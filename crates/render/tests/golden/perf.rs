@@ -18,6 +18,39 @@ fn timed(label: &str, mut run: impl FnMut()) -> Duration {
 }
 
 #[test]
+fn puppet_sized_mesh_is_quick() {
+    use anim_core::Point;
+    use anim_display::Mesh;
+    // 50x50 cells (5000 triangles) over an 800 px square, warped: about what an ARAP-deformed puppet costs.
+    let cells = 50_u32;
+    let (mut source, mut target, mut triangles) = (Vec::new(), Vec::new(), Vec::new());
+    for row in 0..=cells {
+        for col in 0..=cells {
+            let p = Point::new(f64::from(col) * 16.0, f64::from(row) * 16.0);
+            source.push(p);
+            target.push(Point::new(p.x + 12.0 * (p.y / 90.0).sin() + 100.0, p.y + 12.0 * (p.x / 70.0).cos() + 100.0));
+        }
+    }
+    for row in 0..cells {
+        for col in 0..cells {
+            let a = row * (cells + 1) + col;
+            triangles.push([a, a + 1, a + cells + 1]);
+            triangles.push([a + 1, a + cells + 2, a + cells + 1]);
+        }
+    }
+    let content = vec![solid_rect(0.0, 0.0, 800.0, 800.0, RED), solid_circle(400.0, 400.0, 300.0, BLUE)];
+    let mut scene = Scene::new(1100, 1100);
+    scene.add(Node::Mesh(Mesh { transform: Affine::IDENTITY, content, source, target, triangles }));
+    let mut renderer = Renderer::new();
+    let options = RenderOptions::new(1100, 1100);
+    let elapsed = timed("5000-triangle mesh over 800x800", || {
+        let img = renderer.render(&scene.list, &scene.images, &options).unwrap();
+        renderer.recycle(img);
+    });
+    assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
+}
+
+#[test]
 fn full_hd_frame_with_many_shapes_is_quick() {
     let mut scene = Scene::new(1920, 1080);
     for i in 0..400 {

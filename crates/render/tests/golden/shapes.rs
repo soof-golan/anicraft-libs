@@ -18,6 +18,87 @@ fn not_white(px: [u8; 4]) -> bool {
     px != [255, 255, 255, 255]
 }
 
+/// Content with no mirror symmetry of its own: a lopsided glyph-like shape, a gradient, a stroke and a bitmap.
+fn lopsided_content(images: &mut anim_display::ImageStore) -> Vec<Node> {
+    let mut glyph = BezPath::new();
+    glyph.move_to((4.0, 4.0));
+    glyph.line_to((20.0, 4.0));
+    glyph.curve_to((26.0, 4.0), (26.0, 14.0), (20.0, 14.0));
+    glyph.line_to((10.0, 14.0));
+    glyph.line_to((10.0, 28.0));
+    glyph.line_to((4.0, 28.0));
+    glyph.close_path();
+    let tile = images.insert(anim_display::Image::new(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 255]).unwrap());
+    vec![
+        fill(glyph, Paint::Linear(gradient(4.0, 26.0, RED, BLUE))),
+        stroke(line_path(14.0, 20.0, 36.0, 26.0), style(3.0, Cap::Round, Join::Round), BLACK),
+        Node::Bitmap(anim_display::Bitmap { transform: Affine::translate((28.0, 4.0)) * Affine::scale(4.0), image: tile, smoothing: false }),
+    ]
+}
+
+#[test]
+fn mirrored_transforms_flip_everything_consistently() {
+    // Right-to-left layouts mirror whole runs of glyph outlines, so negative-determinant matrices must work for
+    // fills, gradients, strokes and bitmaps alike.
+    let mut plain = Scene::new(40, 32);
+    let content = lopsided_content(&mut plain.images);
+    for node in content.clone() {
+        plain.add(node);
+    }
+    let mut mirrored = Scene::new(40, 32);
+    mirrored.images = plain.images.clone();
+    mirrored.add(Node::Group(Group {
+        transform: Affine::translate((40.0, 0.0)) * Affine::scale_non_uniform(-1.0, 1.0),
+        children: content,
+        ..Group::default()
+    }));
+    let (a, b) = (plain.render(), mirrored.render());
+    let mut worst = 0_u32;
+    let mut differing = 0_u32;
+    for y in 0..32 {
+        for x in 0..40 {
+            let (left, right) = (pixel(&a, x, y), pixel(&b, 39 - x, y));
+            let diff = left.iter().zip(right).map(|(p, q)| u32::from(p.abs_diff(q))).max().unwrap_or(0);
+            worst = worst.max(diff);
+            differing += u32::from(diff > 12);
+        }
+    }
+    assert!(differing <= 6, "{differing} pixels differ by more than 12 (worst {worst})");
+    save("shapes_mirrored_a", &a);
+    save("shapes_mirrored_b", &b);
+}
+
+#[test]
+fn path_direction_does_not_change_a_non_zero_fill() {
+    let forward = rect_path(4.0, 4.0, 16.0, 12.0);
+    let mut reversed = BezPath::new();
+    reversed.move_to((4.0, 4.0));
+    reversed.line_to((4.0, 12.0));
+    reversed.line_to((16.0, 12.0));
+    reversed.line_to((16.0, 4.0));
+    reversed.close_path();
+    let render = |path: BezPath| {
+        let mut scene = Scene::new(20, 16);
+        scene.add(fill(path, Paint::Solid(RED)));
+        scene.render()
+    };
+    assert_eq!(render(forward), render(reversed));
+}
+
+#[test]
+fn translucent_backgrounds_composite_and_stay_premultiplied() {
+    let mut scene = Scene::with_background(4, 4, None);
+    scene.add(solid_rect(0.0, 0.0, 2.0, 4.0, Rgba8::new(0, 0, 255, 128)));
+    let options = RenderOptions::for_stage(scene.list.size).with_background(anim_render::Background::Solid(Rgba8::new(255, 0, 0, 128)));
+    let img = scene.render_with(&options);
+    assert_px(&img, 3, 1, [128, 0, 0, 128], 1);
+    // Blue at 50% over red at 50%: alpha 0.75, premultiplied red 0.25, blue 0.5.
+    assert_px(&img, 0, 1, [64, 0, 128, 192], 2);
+    assert!(img.premultiplied_rgba.chunks_exact(4).all(|p| p[0] <= p[3] && p[2] <= p[3]));
+    let clear = scene.render_with(&RenderOptions::for_stage(scene.list.size).with_background(anim_render::Background::Solid(Rgba8::new(255, 0, 0, 0))));
+    assert_eq!(pixel(&clear, 3, 1), [0, 0, 0, 0], "a fully transparent backdrop colour is no backdrop");
+}
+
 #[test]
 fn solid_rect_has_exact_pixels() {
     let mut scene = Scene::new(20, 20);
