@@ -20,7 +20,6 @@ parley = { workspace = true, features = ["complex-scripts"] }
 parley_data = { workspace = true }
 serde = { workspace = true }
 skrifa = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 anim-render = { workspace = true }
