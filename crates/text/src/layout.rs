@@ -11,11 +11,12 @@ use anim_core::{Point, Rect, Rgba8, Vec2};
 use parley::FontData;
 use parley::editing::{Cursor, Selection};
 use parley::layout::{Affinity as ParleyAffinity, Cluster, Layout};
+use serde::{Serialize, Serializer};
 
 use crate::motion::{Affinity, Caret};
 
 /// One positioned glyph. `x`/`y` is the glyph origin (on the baseline) in layout space.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Glyph {
     /// Glyph id in the run's font.
     pub id: u32,
@@ -48,8 +49,21 @@ impl FontFace {
     }
 }
 
+/// Serialises the identity of the face (`id`, `index`, `coords`), not the font file.
+impl Serialize for FontFace {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Identity<'a> {
+            id: u64,
+            index: u32,
+            coords: &'a [i16],
+        }
+        Identity { id: self.id, index: self.index, coords: &self.coords }.serialize(serializer)
+    }
+}
+
 /// Glyphs of one font, size and colour on one line, in visual (left to right) order.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct GlyphRun {
     pub font: FontFace,
     /// Font size in pixels.
@@ -75,7 +89,7 @@ pub struct GlyphRun {
 }
 
 /// One line of text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Line {
     /// Index into [`TextLayout::paragraphs`].
     pub paragraph: usize,
@@ -91,7 +105,7 @@ pub struct Line {
 }
 
 /// One paragraph of the laid-out text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParagraphInfo {
     /// The paragraph's characters (without the `'\n'` after it).
     pub range: Range<usize>,
@@ -102,8 +116,9 @@ pub struct ParagraphInfo {
     pub lines: Range<usize>,
 }
 
-/// A laid-out text.
-#[derive(Debug, Clone)]
+/// A laid-out text. Serialises (for tools and tests) to its lines, glyph runs, paragraphs, bounds and text; the font
+/// files and the shaper's internal state are left out.
+#[derive(Debug, Clone, Serialize)]
 pub struct TextLayout {
     pub lines: Vec<Line>,
     pub runs: Vec<GlyphRun>,
@@ -112,6 +127,7 @@ pub struct TextLayout {
     pub bounds: Rect,
     pub(crate) text: String,
     pub(crate) truncated: bool,
+    #[serde(skip)]
     pub(crate) paras: Vec<ParaLayout>,
 }
 

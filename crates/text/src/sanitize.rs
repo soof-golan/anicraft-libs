@@ -49,11 +49,15 @@ impl Sanitizer {
     }
 }
 
-/// Whether parley's analysis merges `c` into the cluster of the character before it (grapheme extenders and spacing
-/// marks, except the zero-width non-joiner and variation selectors).
+/// Whether parley's analysis may merge `c` into the cluster of the character before it: grapheme extenders (except the
+/// zero-width non-joiner), spacing marks, the zero-width joiner and variation selectors. Found by fuzzing: after a line
+/// break each of these makes parley's glyph bookkeeping fail an assertion.
 fn attaches_to_previous(props: Properties, c: char) -> bool {
     let gcb = props.grapheme_cluster_break();
-    (gcb == GraphemeClusterBreak::Extend && c != '\u{200C}' && !props.is_variation_selector()) || gcb == GraphemeClusterBreak::SpacingMark
+    (gcb == GraphemeClusterBreak::Extend && c != '\u{200C}')
+        || gcb == GraphemeClusterBreak::SpacingMark
+        || gcb == GraphemeClusterBreak::ZWJ
+        || props.is_variation_selector()
 }
 
 /// An invisible default-ignorable character that is `len` bytes long in UTF-8.
@@ -94,7 +98,7 @@ mod tests {
 
     #[test]
     fn marks_after_a_line_break_are_replaced_by_invisible_characters_of_equal_length() {
-        for text in ["a\n\u{301}b", "\n\u{64C}a", "x\u{2028}\u{301}y", "\r\u{301}z", "q\n\u{903}w"] {
+        for text in ["a\n\u{301}b", "\n\u{64C}a", "x\u{2028}\u{301}y", "\r\u{301}z", "q\n\u{903}w", "a\n\u{200D}b", "\u{2029}\u{FE0F}c", "\n\u{E0100}d"] {
             let cleaned = run(text, false);
             assert_eq!(cleaned.len(), text.len(), "{text:?}");
             assert_ne!(cleaned, text.replace('\r', "\n"), "{text:?} must change");

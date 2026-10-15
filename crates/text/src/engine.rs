@@ -49,6 +49,9 @@ pub struct TextEngine {
     lcx: LayoutContext<Rgba8>,
     outlines: OutlineCache,
     language: Option<Language>,
+    /// Tests make the next shaping attempts panic, to exercise the fallbacks.
+    #[cfg(test)]
+    inject_panics: usize,
 }
 
 impl Default for TextEngine {
@@ -90,7 +93,14 @@ impl TextEngine {
     }
 
     fn with_fonts(fonts: Fonts) -> Self {
-        Self { fonts, lcx: LayoutContext::new(), outlines: OutlineCache::default(), language: None }
+        Self {
+            fonts,
+            lcx: LayoutContext::new(),
+            outlines: OutlineCache::default(),
+            language: None,
+            #[cfg(test)]
+            inject_panics: 0,
+        }
     }
 
     /// Registers font data (TTF, OTF, or a collection) and returns the family names it provides. Registered fonts
@@ -248,6 +258,11 @@ impl TextEngine {
     }
 
     fn try_shape(&mut self, paragraph: &Paragraph, start: usize, scrub: bool) -> Shaped {
+        #[cfg(test)]
+        if self.inject_panics > 0 {
+            self.inject_panics = self.inject_panics.saturating_sub(1);
+            std::panic::panic_any("injected shaping failure");
+        }
         let prefix = match paragraph.direction {
             Direction::Auto => "",
             Direction::Ltr => LRM,
@@ -389,6 +404,47 @@ mod tests {
         assert_eq!(spacing_ranges("ab", 3), vec![3..5]);
         assert_eq!(spacing_ranges("aبb", 0), vec![0..1, 3..4]);
         assert_eq!(spacing_ranges("بب", 0), Vec::<Range<usize>>::new());
+    }
+
+    #[test]
+    fn a_shaping_panic_falls_back_to_a_scrubbed_paragraph_with_the_same_offsets() {
+        let mut engine = TextEngine::new();
+        let text = RichText::plain("ab שלום\nsecond");
+        let normal = engine.layout(&text, Some(300.0));
+        engine.inject_panics = 1;
+        let scrubbed = engine.layout(&text, Some(300.0));
+        assert_eq!(scrubbed.text(), normal.text());
+        assert_eq!(scrubbed.paragraphs.len(), 2);
+        assert_eq!(scrubbed.paragraphs[0].range, normal.paragraphs[0].range);
+        assert_eq!(scrubbed.lines.len(), normal.lines.len());
+        // The engine keeps working afterwards.
+        let after = engine.layout(&text, Some(300.0));
+        assert_eq!(after.lines.len(), normal.lines.len());
+    }
+
+    #[test]
+    fn when_shaping_keeps_failing_the_paragraph_is_empty_but_queries_still_work() {
+        let mut engine = TextEngine::new();
+        engine.inject_panics = 2;
+        let layout = engine.layout(&RichText::plain("lost\nkept"), Some(300.0));
+        assert_eq!(layout.text(), "lost\nkept");
+        assert_eq!(layout.paragraphs.len(), 2);
+        assert_eq!(layout.paragraphs[0].range, 0..4);
+        assert_eq!(layout.paragraphs[0].lines, 0..1, "the failed paragraph is one empty line");
+        assert_eq!(layout.lines.len(), 2);
+        assert!(layout.runs.iter().all(|r| r.line == 1), "its glyphs are in the other paragraph, which is intact");
+        for offset in 0..=layout.text().len() {
+            let caret = layout.caret_at(offset);
+            let _ = layout.caret_rect(caret, 1.0);
+            let _ = layout.hit_test_caret(anim_core::Point::new(5.0, 5.0));
+            let _ = layout.selection_rects(0..offset);
+            for motion in [crate::Motion::Left, crate::Motion::Right, crate::Motion::Up, crate::Motion::Down, crate::Motion::LineEnd, crate::Motion::WordRight]
+            {
+                let _ = layout.move_caret(caret, motion, None);
+            }
+            let _ = layout.word_range_at(offset);
+        }
+        assert_eq!(engine.to_display(&layout).len(), 1);
     }
 
     #[test]

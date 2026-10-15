@@ -8,11 +8,13 @@
 use std::ops::Range;
 
 use anim_core::Point;
+use parley::editing::Cursor;
+use serde::{Deserialize, Serialize};
 
-use crate::layout::TextLayout;
+use crate::layout::{ParaLayout, TextLayout};
 
 /// Which side of a bidi or line-wrap boundary a caret belongs to when one offset has two screen positions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Affinity {
     /// Attached to the character after the offset (the usual case).
     #[default]
@@ -23,7 +25,7 @@ pub enum Affinity {
 }
 
 /// A text position: a byte offset into the plain text plus an [`Affinity`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct Caret {
     pub offset: usize,
     pub affinity: Affinity,
@@ -38,7 +40,7 @@ impl Caret {
 }
 
 /// An anchor and a focus caret; the focus is the end that moves when the selection is extended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct Selection {
     pub anchor: Caret,
     pub focus: Caret,
@@ -65,7 +67,7 @@ impl Selection {
 }
 
 /// A way to move the caret.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Motion {
     /// One character to the left on screen.
     Left,
@@ -87,6 +89,33 @@ pub enum Motion {
     ParagraphEnd,
     TextStart,
     TextEnd,
+}
+
+/// Moves `cursor` visually to the next word boundary. This is parley's `next_visual_word`/`previous_visual_word` with a
+/// bound on the number of steps: parley loops until the cursor stops moving, and on some malformed layouts (found by
+/// fuzzing) the cursor cycles between two places instead.
+fn visual_word_step(para: &ParaLayout, cursor: Cursor, right: bool) -> Cursor {
+    let layout = &para.layout;
+    let mut cur = cursor;
+    for _ in 0..para.len.saturating_add(para.prefix).saturating_add(8) {
+        let next = if right { cur.next_visual(layout) } else { cur.previous_visual(layout) };
+        if next == cur {
+            break;
+        }
+        cur = next;
+        let [Some(left), Some(right_cluster)] = cur.visual_clusters(layout) else { break };
+        let boundary = if right {
+            if left.is_rtl() { left.is_word_boundary() && !left.is_space_or_nbsp() } else { right_cluster.is_word_boundary() && !left.is_space_or_nbsp() }
+        } else if left.is_rtl() {
+            left.is_word_boundary() && (left.is_space_or_nbsp() || (right_cluster.is_word_boundary() && !right_cluster.is_space_or_nbsp()))
+        } else {
+            right_cluster.is_word_boundary() && !right_cluster.is_space_or_nbsp()
+        };
+        if boundary {
+            break;
+        }
+    }
+    cur
 }
 
 impl TextLayout {
@@ -148,11 +177,12 @@ impl TextLayout {
         let Some(para) = self.paras.get(pi) else { return caret };
         let mut cursor = para.cursor(caret);
         for _ in 0..3 {
-            let next = match (right, word) {
-                (true, false) => cursor.next_visual(&para.layout),
-                (false, false) => cursor.previous_visual(&para.layout),
-                (true, true) => cursor.next_visual_word(&para.layout),
-                (false, true) => cursor.previous_visual_word(&para.layout),
+            let next = if word {
+                visual_word_step(para, cursor, right)
+            } else if right {
+                cursor.next_visual(&para.layout)
+            } else {
+                cursor.previous_visual(&para.layout)
             };
             let moved = para.caret(next);
             if moved != caret {

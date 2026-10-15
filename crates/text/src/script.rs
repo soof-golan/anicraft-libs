@@ -5,8 +5,10 @@
 //! installed *and* really cover the script's sample text; when none does it scans the installed families for one that
 //! does (see `fonts.rs`), so unusual systems still get a fallback and nothing here is a hard requirement.
 
+use serde::{Deserialize, Serialize};
+
 /// A script with its own fallback chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Script {
     Hebrew,
     Arabic,

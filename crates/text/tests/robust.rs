@@ -17,6 +17,18 @@ const ALPHABET: &[&str] = &[
     "😀", "\u{0}", "\u{FEFF}", "\u{FFFD}", "\u{2028}", "\u{0085}",
 ];
 
+/// Progress marks for hunting a hang: `ANIM_TEXT_TRACE=1 cargo test ... -- --nocapture`.
+fn trace(what: &str) {
+    if std::env::var_os("ANIM_TEXT_TRACE").is_some() {
+        eprintln!("  .. {what}");
+    }
+}
+
+/// Cases per property: 48 by default (a few seconds), more with `ANIM_TEXT_CASES=5000` for an overnight soak.
+fn cases() -> u32 {
+    std::env::var("ANIM_TEXT_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(48)
+}
+
 /// Ordinary text: letters, digits, spaces and punctuation in Latin, Hebrew, Arabic and CJK, with no controls or joiners.
 const TILING_ALPHABET: &[&str] = &["a", "b", "word", " ", " ", "1", "9", ".", ",", "(", ")", "ש", "ל", "ו", "ם", "ב", "ا", "ل", "中", "文", "あ", "한", "é"];
 
@@ -98,7 +110,7 @@ fn arb_motion() -> impl Strategy<Value = Motion> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 48, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: cases(), failure_persistence: None, ..ProptestConfig::default() })]
 
     #[test]
     fn layout_and_every_query_survive_anything(
@@ -109,7 +121,11 @@ proptest! {
         motions in proptest::collection::vec(arb_motion(), 8),
     ) {
         let Some(mut engine) = engine() else { return Ok(()) };
+        if std::env::var_os("ANIM_TEXT_TRACE").is_some() {
+            eprintln!("CASE {text:?} {width:?}");
+        }
         let layout = engine.layout(&text, width);
+        trace("laid out");
         let len = layout.text().len();
 
         prop_assert!(layout.bounds.x1.is_finite() && layout.bounds.y1.is_finite());
@@ -125,25 +141,31 @@ proptest! {
         }
         // Display conversion never panics and produces finite geometry.
         let nodes = engine.to_display(&layout);
+        trace("displayed");
         for node in &nodes {
             if let anim_display::Node::Fill(fill) = node {
                 let bb = anim_core::kurbo::Shape::bounding_box(&fill.path);
                 prop_assert!(bb.x0.is_finite() || fill.path.elements().is_empty());
             }
         }
+        trace("display checked");
 
         for &offset in &offsets {
             for affinity in [Affinity::Downstream, Affinity::Upstream] {
                 let caret = Caret { offset, affinity };
+                trace(&format!("caret_rect {caret:?}"));
                 let rect = layout.caret_rect(caret, 1.0);
                 prop_assert!(rect.is_some_and(|r| r.x0.is_finite() && r.y0.is_finite() && r.height() >= 0.0), "caret {caret:?} in {len} bytes: {rect:?}");
                 for motion in &motions {
+                    trace(&format!("move {motion:?} from {caret:?}"));
                     let moved = layout.move_caret(caret, *motion, None);
                     prop_assert!(moved.offset <= len && layout.text().is_char_boundary(moved.offset), "{motion:?} from {caret:?} gave {moved:?} (len {len})");
                 }
             }
+            trace(&format!("word_range_at {offset}"));
             let word = layout.word_range_at(offset);
             prop_assert!(word.start <= word.end && word.end <= len, "{word:?}");
+            trace(&format!("selection_rects {offset}"));
             let rects = layout.selection_rects(offset..offset.saturating_add(17));
             prop_assert!(rects.iter().all(|r| r.x0.is_finite() && r.x1.is_finite() && r.y0.is_finite()));
         }
@@ -199,6 +221,45 @@ proptest! {
             prop_assert!(!rich.paragraphs.is_empty());
         }
     }
+}
+
+/// Parley asserts (a panic in debug builds) when a combining mark, joiner or variation selector follows a line break;
+/// the engine rewrites such characters into invisible ones of the same length, so the rest of the text is still shaped
+/// normally (and not replaced by the last-resort placeholders).
+#[test]
+fn marks_and_joiners_after_a_line_break_do_not_derail_shaping() {
+    let Some(mut engine) = common::engine_for(&[anim_text::Script::Hebrew]) else { return };
+    for (text, mark_len) in
+        [("\n\u{301}", 2), ("\n\u{64C}", 2), ("\n\u{200D}", 3), ("\r\u{FE0F}", 3), ("\u{2028}\u{301}", 2), ("\n\u{903}", 3), ("\n\u{E0100}", 4)]
+    {
+        let full = format!("a{text}שלום b");
+        let layout = engine.layout(&RichText::new(vec![Paragraph::from_text(full.clone())]), Some(300.0));
+        assert_eq!(layout.text(), full, "offsets are the author's offsets");
+        assert!(layout.runs.iter().any(|r| r.rtl && r.glyphs.iter().all(|g| g.id != 0)), "the Hebrew after {text:?} is shaped for real");
+        assert!(layout.lines.len() >= 2, "{text:?} still breaks the line");
+        let hebrew_start = full.find('ש').unwrap();
+        assert_eq!(hebrew_start, 1 + text.len(), "{mark_len}");
+        let caret = layout.caret_at(hebrew_start);
+        assert!(layout.caret_rect(caret, 1.0).is_some());
+    }
+}
+
+#[test]
+fn word_motion_always_terminates() {
+    let Some(mut engine) = engine() else { return };
+    let text = RichText::new(vec![Paragraph::from_text("a\u{200F}b \u{202E}c d\u{202C} \u{2067}e f\u{2069} שלום עולם \u{200D}x\ny z".repeat(8))]);
+    let layout = engine.layout(&text, Some(120.0));
+    let len = layout.text().len();
+    let started = std::time::Instant::now();
+    for offset in (0..=len).filter(|&o| layout.text().is_char_boundary(o)) {
+        for motion in [Motion::WordLeft, Motion::WordRight] {
+            for affinity in [Affinity::Downstream, Affinity::Upstream] {
+                let moved = layout.move_caret(Caret { offset, affinity }, motion, None);
+                assert!(moved.offset <= len);
+            }
+        }
+    }
+    assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
 }
 
 #[test]
