@@ -10,6 +10,20 @@ fn group_node(group: Group) -> Node {
 }
 
 #[test]
+fn bitmap_masks_use_their_alpha_channel() {
+    // A 4x1 alpha ramp as a layer mask (premultiplied black at 0, 1/3, 2/3 and full alpha), stretched over 40 px.
+    let mut scene = Scene::new(40, 8);
+    let ramp = scene.images.insert(anim_display::Image::new(4, 1, vec![0, 0, 0, 0, 0, 0, 0, 85, 0, 0, 0, 170, 0, 0, 0, 255]).unwrap());
+    let mask = Node::Bitmap(anim_display::Bitmap { transform: Affine::scale_non_uniform(10.0, 8.0), image: ramp, smoothing: false });
+    scene.add(group_node(Group { mask: Some(vec![mask]), children: vec![solid_rect(0.0, 0.0, 40.0, 8.0, RED)], ..Group::default() }));
+    let img = scene.render();
+    assert_px(&img, 5, 4, [255, 255, 255, 255], 0);
+    assert_px(&img, 15, 4, [255, 170, 170, 255], 2);
+    assert_px(&img, 25, 4, [255, 85, 85, 255], 2);
+    assert_px(&img, 35, 4, [255, 0, 0, 255], 0);
+}
+
+#[test]
 fn nested_group_transforms_compose() {
     let mut scene = Scene::new(40, 40);
     let inner = Group { transform: Affine::scale(2.0), children: vec![solid_rect(0.0, 0.0, 3.0, 2.0, RED)], ..Group::default() };

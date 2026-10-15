@@ -228,6 +228,39 @@ fn busy_scene(seed: u64) -> Scene {
 }
 
 #[test]
+fn picking_agrees_with_the_rasteriser_wherever_coverage_is_unambiguous() {
+    // Opaque shapes under transforms, a mask and a mesh-free nesting: at every pixel that is exactly background or
+    // exactly a shape colour, `pick` at the pixel centre must say hit / miss accordingly.
+    let mut scene = Scene::new(48, 48);
+    scene.add(solid_rect(4.0, 4.0, 20.0, 16.0, RED));
+    scene.add(solid_circle(30.0, 12.0, 9.0, BLUE));
+    scene.add(Node::Group(Group {
+        transform: Affine::translate((6.0, 24.0)) * Affine::rotate(0.4),
+        mask: Some(vec![solid_circle(14.0, 6.0, 12.0, BLACK)]),
+        children: vec![solid_rect(0.0, 0.0, 30.0, 12.0, GREEN)],
+        key: Some(7),
+        ..Group::default()
+    }));
+    let image = scene.render();
+    let view = Affine::IDENTITY;
+    let (mut checked, mut keyed) = (0, 0);
+    for y in 0..48_u32 {
+        for x in 0..48_u32 {
+            let px = pixel(&image, x, y);
+            let background = px == [255, 255, 255, 255];
+            if !background && px != [255, 0, 0, 255] && px != [0, 0, 255, 255] && px != [0, 255, 0, 255] {
+                continue;
+            }
+            let hit = anim_render::pick(&scene.list, &scene.images, view, anim_core::Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5));
+            assert_eq!(hit.is_some(), !background, "pixel ({x}, {y}) is {px:?}");
+            checked += 1;
+            keyed += usize::from(hit.is_some_and(|h| h.keys == vec![7]));
+        }
+    }
+    assert!(checked > 2000 && keyed > 100, "{checked} pixels compared, {keyed} in the keyed group");
+}
+
+#[test]
 fn rendering_is_deterministic() {
     let scene = busy_scene(7);
     let first = scene.render();

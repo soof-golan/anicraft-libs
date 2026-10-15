@@ -51,8 +51,10 @@ releases, the way the Craft apps pin `craft-libs`.
 ### What `anim-render` guarantees producers and exporters
 
 Entry points: `render(&DisplayList, &ImageStore, &RenderOptions) -> Result<Image>` (premultiplied RGBA8), the reusable
-`Renderer` (keeps scratch buffers; `recycle(image)` hands a finished frame back), `RenderStats` (what the last render
-skipped), `content_bounds` and the straight/premultiplied pixel converters.
+`Renderer` (keeps scratch buffers; `recycle(image)` hands a finished frame back; `render_nodes` draws a node list
+without a `DisplayList`), `RenderStats` (what the last render skipped), `content_bounds`, `pick` / `pick_all` (hit
+testing by geometry, reporting the `Group::key`s around the hit and the index path to the node) and the
+straight/premultiplied pixel converters.
 
 - **Coordinates**: stage pixels, y down; `RenderOptions::view` maps stage to output pixels. Geometry beyond ±1e7
   device pixels, non-finite numbers and degenerate matrices skip the node (counted in `RenderStats::invalid`), never
