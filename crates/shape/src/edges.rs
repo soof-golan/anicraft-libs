@@ -148,17 +148,33 @@ impl EdgeShape {
     /// `cubics` elements into the quadratic edges they approximate.
     ///
     /// # Errors
-    /// [`ShapeError`] naming the first element whose `edges` or `cubics` text does not parse.
+    /// [`ShapeError`] naming the first element whose `edges` or `cubics` text does not parse. Readers that must
+    /// get through damaged files use [`from_xfl_lenient`](Self::from_xfl_lenient) instead.
     pub fn from_xfl(fills: Vec<FillStyle>, strokes: Vec<StrokeStyle>, xfl: &[XflEdge]) -> Result<Self, ShapeError> {
+        let (shape, errors) = Self::from_xfl_lenient(fills, strokes, xfl);
+        errors.into_iter().next().map_or(Ok(shape), Err)
+    }
+
+    /// Like [`from_xfl`](Self::from_xfl), but an element whose text does not parse is kept without geometry (it
+    /// draws nothing and writes back its original text) and reported in the returned list, so that one damaged
+    /// edge does not cost the whole shape.
+    #[must_use]
+    pub fn from_xfl_lenient(fills: Vec<FillStyle>, strokes: Vec<StrokeStyle>, xfl: &[XflEdge]) -> (Self, Vec<ShapeError>) {
+        let mut errors = Vec::new();
         let mut edges: Vec<Edge> = Vec::with_capacity(xfl.len());
         let mut runs: Vec<CubicRun> = Vec::new();
         for (index, element) in xfl.iter().enumerate() {
-            let segments = match &element.edges {
-                Some(text) => parse_edges(text).map_err(|source| ShapeError::Edges { index, source })?,
-                None => Vec::new(),
-            };
+            let segments = element.edges.as_deref().map_or_else(Vec::new, |text| {
+                parse_edges(text).unwrap_or_else(|source| {
+                    errors.push(ShapeError::Edges { index, source });
+                    Vec::new()
+                })
+            });
             if let Some(text) = &element.cubics {
-                runs.extend(parse_cubics(text).map_err(|source| ShapeError::Cubics { index, source })?);
+                match parse_cubics(text) {
+                    Ok(parsed) => runs.extend(parsed),
+                    Err(source) => errors.push(ShapeError::Cubics { index, source }),
+                }
             }
             let unstyled = element.fill_style0 == 0 && element.fill_style1 == 0 && element.stroke_style == 0;
             if let (true, None, Some(text)) = (unstyled, &element.edges, &element.cubics)
@@ -182,7 +198,7 @@ impl EdgeShape {
                 original.fingerprint = print;
             }
         }
-        Ok(Self { fills, strokes, edges })
+        (Self { fills, strokes, edges }, errors)
     }
 
     /// The `<Edge>` elements to write for this shape, in order. Unedited edges reproduce their original text and
@@ -473,6 +489,33 @@ mod tests {
         let back: EdgeShape = serde_json::from_str(&json).unwrap();
         assert_eq!(back, shape);
         assert_eq!(back.to_xfl_edges(), input);
+    }
+
+    #[test]
+    fn lenient_reading_keeps_damaged_edges_untouched() {
+        let input = vec![xfl(0, 1, 0, "!0 0|10 0|10 10"), xfl(0, 1, 0, "!5 5|oops|1 1"), xfl(0, 1, 0, "!10 10|0 0"), cubics_only("!0 0(;1,1")];
+        let (shape, errors) = EdgeShape::from_xfl_lenient(vec![], vec![], &input);
+        assert_eq!(errors.len(), 2);
+        assert!(matches!(errors.first(), Some(ShapeError::Edges { index: 1, .. })));
+        assert!(matches!(errors.get(1), Some(ShapeError::Cubics { index: 3, .. })));
+        assert_eq!(shape.edges.len(), 3);
+        assert_eq!(shape.edges.get(1).map(|e| e.segments.len()), Some(0));
+        assert_eq!(shape.edges.first().map(|e| e.segments.len()), Some(2));
+        assert_eq!(shape.to_xfl_edges(), input, "damaged text is written back as it was");
+    }
+
+    #[test]
+    fn an_element_with_both_attributes_round_trips() {
+        let both = XflEdge {
+            fill_style0: 0,
+            fill_style1: 1,
+            stroke_style: 0,
+            edges: Some("!0 0[100 50 200 0".to_owned()),
+            cubics: Some("!0 0(;50,60 150,60 200,0q0 0Q100 50q200 0);".to_owned()),
+        };
+        let shape = EdgeShape::from_xfl(vec![], vec![], std::slice::from_ref(&both)).unwrap();
+        assert!(matches!(shape.edges.first().and_then(|e| e.segments.first()), Some(Segment::Cubic { .. })));
+        assert_eq!(shape.to_xfl_edges(), vec![both]);
     }
 
     #[test]
