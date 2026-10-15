@@ -23,6 +23,10 @@ pub struct RenderStats {
     pub degraded_groups: usize,
     /// Most bytes held by offscreen layers (excluding the output) at any moment.
     pub peak_layer_bytes: usize,
+    /// Mip levels built for bitmaps drawn small (0 on a repeat render when the image cache is kept).
+    pub mips_built: usize,
+    /// Bytes of mip levels held by the renderer after this render.
+    pub mip_cache_bytes: usize,
 }
 
 impl RenderStats {

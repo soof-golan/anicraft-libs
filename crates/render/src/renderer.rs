@@ -39,12 +39,29 @@ pub fn content_bounds(list: &DisplayList, images: &ImageStore, view: Affine) -> 
 pub struct Renderer {
     pool: Pool,
     stats: RenderStats,
+    mips: MipCache,
+    keep_mips: bool,
 }
 
 impl Renderer {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Keeps the mip levels of bitmaps drawn small between renders (off by default). Playback of a scene whose
+    /// bitmaps never change then builds each level once instead of every frame.
+    ///
+    /// While on, an [`anim_display::ImageId`] must keep meaning the same pixels: call
+    /// [`Renderer::clear_image_cache`] when switching to a different [`ImageStore`] (a changed image size under
+    /// the same id is detected, other changes are not).
+    pub const fn keep_image_cache(&mut self, keep: bool) {
+        self.keep_mips = keep;
+    }
+
+    /// Drops the cached mip levels.
+    pub fn clear_image_cache(&mut self) {
+        self.mips.clear();
     }
 
     /// Renders `list` into a new premultiplied RGBA8 image of `options.width` x `options.height` pixels.
@@ -79,9 +96,12 @@ impl Renderer {
         if let Some(color) = backdrop(background, options.background) {
             root.pm.fill(convert::color(color));
         }
-        let mut cx = Ctx { images, antialias: options.antialias, pool: &mut self.pool, stats: &mut self.stats, mips: MipCache::default() };
+        self.mips.begin(self.keep_mips);
+        let mut cx = Ctx { images, antialias: options.antialias, pool: &mut self.pool, stats: &mut self.stats, mips: &mut self.mips };
         draw::nodes(&mut cx, &mut root, nodes, options.view, 0);
         self.stats.peak_layer_bytes = self.pool.peak_bytes().saturating_sub(root_bytes);
+        self.stats.mips_built = self.mips.built();
+        self.stats.mip_cache_bytes = self.mips.bytes();
         let bytes = self.pool.release(root);
         Ok(Image::new(width, height, bytes)?)
     }

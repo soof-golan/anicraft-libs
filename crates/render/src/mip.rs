@@ -16,11 +16,26 @@ const MAX_LEVEL: u8 = 12;
 /// Mip levels held at once; further requests fall back to the full-size image.
 const MAX_CACHE_BYTES: usize = 256 * 1024 * 1024;
 
-/// Mip levels for the images of one render.
+/// Mip levels for the images being rendered. Cleared at the start of every render unless the caller asked the
+/// renderer to keep it, in which case an [`ImageId`] must keep meaning the same pixels.
 #[derive(Debug, Default)]
 pub struct MipCache {
-    levels: BTreeMap<(ImageId, u8), Image>,
+    levels: BTreeMap<(ImageId, u8), Entry>,
     bytes: usize,
+    /// Counts renders, to know which levels the current one used.
+    serial: u64,
+    /// Levels built since the counter was last read.
+    built: usize,
+}
+
+#[derive(Debug)]
+struct Entry {
+    image: Image,
+    /// Size of the full-size image the level came from: a different size under the same id means the store was
+    /// replaced and the level is stale.
+    base: (u32, u32),
+    /// Serial of the last render that asked for it.
+    used: u64,
 }
 
 /// The mip level to sample an image of `width` x `height` drawn at `scale` (image pixels to device pixels, the
@@ -40,34 +55,92 @@ pub fn level_scale(level: u8) -> f64 {
 }
 
 impl MipCache {
-    /// Makes sure `level` of `id` exists (building the levels below it as needed). Returns false when the image is
-    /// unknown or the cache is full, in which case callers use the full-size image.
+    /// Starts a render: forgets everything unless `keep`, and counts the render.
+    pub fn begin(&mut self, keep: bool) {
+        if !keep {
+            self.clear();
+        }
+        self.serial = self.serial.wrapping_add(1);
+        self.built = 0;
+    }
+
+    /// Drops every level.
+    pub fn clear(&mut self) {
+        self.levels.clear();
+        self.bytes = 0;
+    }
+
+    /// How many levels were built since the last [`MipCache::begin`].
+    pub const fn built(&self) -> usize {
+        self.built
+    }
+
+    /// Bytes of mip levels held.
+    pub const fn bytes(&self) -> usize {
+        self.bytes
+    }
+
+    /// Makes sure `level` of `id` exists (building the levels below it as needed) and marks it used by this
+    /// render. Returns false when the image is unknown or the cache is full, in which case callers use the full-size
+    /// image.
     pub fn ensure(&mut self, images: &ImageStore, id: ImageId, level: u8) -> bool {
         if level == 0 {
             return true;
         }
-        if self.levels.contains_key(&(id, level)) {
-            return true;
-        }
         let Some(base) = images.get(id) else { return false };
+        let base_size = (base.width, base.height);
         for current in 1..=level {
-            if self.levels.contains_key(&(id, current)) {
-                continue;
+            let key = (id, current);
+            if let Some(entry) = self.levels.get_mut(&key) {
+                if entry.base == base_size {
+                    entry.used = self.serial;
+                    continue;
+                }
+                // Same id, different image: the store was replaced.
+                self.remove_image(id);
             }
-            let previous = if current == 1 { Some(base) } else { self.levels.get(&(id, current.saturating_sub(1))) };
+            let previous = if current == 1 { Some(base) } else { self.levels.get(&(id, current.saturating_sub(1))).map(|entry| &entry.image) };
             let Some(next) = previous.and_then(downsample) else { return false };
-            if self.bytes.saturating_add(next.premultiplied_rgba.len()) > MAX_CACHE_BYTES {
-                return false;
+            let size = next.premultiplied_rgba.len();
+            if self.bytes.saturating_add(size) > MAX_CACHE_BYTES {
+                self.evict_unused();
+                if self.bytes.saturating_add(size) > MAX_CACHE_BYTES {
+                    return false;
+                }
             }
-            self.bytes = self.bytes.saturating_add(next.premultiplied_rgba.len());
-            self.levels.insert((id, current), next);
+            self.bytes = self.bytes.saturating_add(size);
+            self.built = self.built.saturating_add(1);
+            self.levels.insert(key, Entry { image: next, base: base_size, used: self.serial });
         }
         true
     }
 
     /// A built level (`level` 0 is never stored: use the image itself).
     pub fn get(&self, id: ImageId, level: u8) -> Option<&Image> {
-        self.levels.get(&(id, level))
+        self.levels.get(&(id, level)).map(|entry| &entry.image)
+    }
+
+    fn remove_image(&mut self, id: ImageId) {
+        let stale: Vec<(ImageId, u8)> = self.levels.keys().filter(|(image, _)| *image == id).copied().collect();
+        for key in stale {
+            if let Some(entry) = self.levels.remove(&key) {
+                self.bytes = self.bytes.saturating_sub(entry.image.premultiplied_rgba.len());
+            }
+        }
+    }
+
+    /// Drops the levels the current render has not asked for.
+    fn evict_unused(&mut self) {
+        let serial = self.serial;
+        let mut freed = 0_usize;
+        self.levels.retain(|_, entry| {
+            let keep = entry.used == serial;
+            if !keep {
+                freed = freed.saturating_add(entry.image.premultiplied_rgba.len());
+            }
+            keep
+        });
+        self.bytes = self.bytes.saturating_sub(freed);
     }
 }
 
@@ -177,5 +250,38 @@ mod tests {
         let mut cache = MipCache::default();
         assert!(cache.ensure(&store, id, 1));
         assert_eq!(cache.get(id, 1).unwrap().premultiplied_rgba, vec![128, 128, 128, 128]);
+    }
+
+    #[test]
+    fn kept_levels_are_reused_and_dropped_otherwise() {
+        let mut store = ImageStore::new();
+        let id = store.insert(checker(32));
+        let mut cache = MipCache::default();
+        cache.begin(true);
+        assert!(cache.ensure(&store, id, 2));
+        assert_eq!(cache.built(), 2);
+        cache.begin(true);
+        assert!(cache.ensure(&store, id, 2));
+        assert_eq!(cache.built(), 0, "levels survive a render that keeps the cache");
+        cache.begin(false);
+        assert!(cache.get(id, 1).is_none() && cache.bytes() == 0, "a render that does not keep it starts empty");
+        assert!(cache.ensure(&store, id, 1));
+        assert_eq!(cache.built(), 1);
+    }
+
+    #[test]
+    fn a_replaced_image_under_the_same_id_is_rebuilt() {
+        let mut store = ImageStore::new();
+        let id = store.insert(checker(16));
+        let mut cache = MipCache::default();
+        cache.begin(true);
+        assert!(cache.ensure(&store, id, 1));
+        assert_eq!(cache.get(id, 1).unwrap().width, 8);
+        let mut other = ImageStore::new();
+        assert_eq!(other.insert(checker(8)), id, "a fresh store hands out the same first id");
+        cache.begin(true);
+        assert!(cache.ensure(&other, id, 1));
+        assert_eq!(cache.get(id, 1).unwrap().width, 4, "the stale level was replaced");
+        assert_eq!(cache.bytes(), 4 * 4 * 4);
     }
 }

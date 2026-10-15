@@ -313,6 +313,33 @@ fn unsmoothed_bitmaps_stay_pixel_exact_when_minified() {
 }
 
 #[test]
+fn kept_image_cache_builds_mip_levels_once_and_changes_nothing() {
+    let mut scene = Scene::new(32, 32);
+    let id = fine_checker(&mut scene.images, 128);
+    scene.add(bitmap_node(id, Affine::scale(0.2), true));
+    let options = anim_render::RenderOptions::new(32, 32);
+    let mut fresh = anim_render::Renderer::new();
+    let first = fresh.render(&scene.list, &scene.images, &options).unwrap();
+    assert!(fresh.stats().mips_built > 0);
+    let again = fresh.render(&scene.list, &scene.images, &options).unwrap();
+    assert!(fresh.stats().mips_built > 0, "by default every render builds what it needs");
+    assert_eq!(first, again);
+
+    let mut keeping = anim_render::Renderer::new();
+    keeping.keep_image_cache(true);
+    let one = keeping.render(&scene.list, &scene.images, &options).unwrap();
+    let built = keeping.stats().mips_built;
+    let two = keeping.render(&scene.list, &scene.images, &options).unwrap();
+    assert!(built > 0);
+    assert_eq!(keeping.stats().mips_built, 0, "kept levels are reused");
+    assert_eq!((&one, &two), (&first, &first), "the cache changes timing, never pixels");
+    keeping.clear_image_cache();
+    let three = keeping.render(&scene.list, &scene.images, &options).unwrap();
+    assert_eq!(keeping.stats().mips_built, built);
+    assert_eq!(three, first);
+}
+
+#[test]
 fn stroke_with_gradient_paint() {
     let mut scene = Scene::new(100, 10);
     let node = Node::Stroke(anim_display::Stroke {

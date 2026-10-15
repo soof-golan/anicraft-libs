@@ -73,7 +73,9 @@ skipped), `content_bounds` and the straight/premultiplied pixel converters.
   100 %; blur `quality` is the number of box passes (shadows and glows use 3); the shadow direction stays fixed in device
   space. Layers over 64 M pixels skip blur/shadow/glow (`degraded_groups`).
 - **Bitmaps**: smoothing off is nearest-neighbour; smoothing on is bilinear, with box-filtered mip levels when drawn at
-  under half size. Clamped bitmap fills extend their edge pixels.
+  under half size (built per render; `Renderer::keep_image_cache(true)` keeps them across frames when the store's image
+  ids keep meaning the same pixels, which is what playback of large layered artwork wants). Clamped bitmap fills extend
+  their edge pixels.
 - **Meshes**: an undeformed mesh (target == source) reproduces the plain render exactly and has hard edges; a deformed
   mesh renders its content at the fitted pixel density, fills triangles seamlessly and anti-aliases its silhouette.
 - **Determinism**: the same inputs give the same bytes on one machine, regardless of thread count. tiny-skia's SIMD paths

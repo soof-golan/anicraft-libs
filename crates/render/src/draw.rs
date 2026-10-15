@@ -22,7 +22,7 @@ pub struct Ctx<'a> {
     pub pool: &'a mut Pool,
     pub stats: &'a mut RenderStats,
     /// Mip levels of the bitmaps drawn small in this render.
-    pub mips: MipCache,
+    pub mips: &'a mut MipCache,
 }
 
 /// Counts one more event, saturating.
@@ -87,7 +87,7 @@ fn fill(cx: &mut Ctx<'_>, layer: &mut Layer, item: &Fill, matrix: Affine) {
     };
     let images = cx.images;
     prepare_mips(cx, &item.paint, local);
-    let shader = match paint::shader(&item.paint, local, local, images, &cx.mips) {
+    let shader = match paint::shader(&item.paint, local, local, images, cx.mips) {
         Ok(shader) => shader,
         Err(issue) => return paint_failed(cx, issue),
     };
@@ -131,7 +131,7 @@ fn outline(cx: &mut Ctx<'_>, layer: &mut Layer, item: &Stroke, matrix: Affine) {
     };
     let images = cx.images;
     prepare_mips(cx, &item.paint, local);
-    let shader = match paint::shader(&item.paint, plan.pre, local, images, &cx.mips) {
+    let shader = match paint::shader(&item.paint, plan.pre, local, images, cx.mips) {
         Ok(shader) => shader,
         Err(issue) => return paint_failed(cx, issue),
     };
@@ -161,7 +161,7 @@ fn bitmap(cx: &mut Ctx<'_>, layer: &mut Layer, item: &Bitmap, matrix: Affine) {
     if level > 0 {
         cx.mips.ensure(images, item.image, level);
     }
-    let Ok(sampled) = paint::sample(item.image, local, item.smoothing, images, &cx.mips) else {
+    let Ok(sampled) = paint::sample(item.image, local, item.smoothing, images, cx.mips) else {
         bump(&mut cx.stats.missing_images);
         return;
     };
