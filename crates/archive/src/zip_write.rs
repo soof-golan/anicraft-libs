@@ -12,12 +12,19 @@ use crate::names::{is_safe_relative, normalize_name};
 use crate::writer::{ArchiveWriter, Compression, EntryName, NewEntry};
 use crate::zip_index::{SIG_CENTRAL, SIG_EOCD, SIG_EOCD64, SIG_LOCAL, SIG_LOCATOR64};
 use flate2::write::DeflateEncoder;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::io::Write;
 
 /// The `mimetype` content of an XFL/FLA document.
 pub const XFL_MIMETYPE: &str = "application/vnd.adobe.xfl";
 
+/// Entries larger than this are sampled before [`Compression::Auto`] deflates them in full.
+const AUTO_SAMPLE_MIN_ENTRY: usize = 1024 * 1024;
+/// How much of the start of a large entry is sampled.
+const AUTO_SAMPLE_LEN: usize = 128 * 1024;
+/// A sample that deflates to at least this percentage of its size marks the entry as incompressible.
+const AUTO_STORE_PERCENT: usize = 97;
 const FLAG_UTF8: u16 = 0x0800;
 const MARK_32: u32 = u32::MAX;
 const MARK_16: u16 = u16::MAX;
@@ -168,25 +175,34 @@ impl<W: Write> ZipWriter<W> {
         Ok(bytes)
     }
 
-    fn compress(&self, entry: &NewEntry<'_>, name: &[u8]) -> Result<(u16, Vec<u8>)> {
+    fn deflate(&self, data: &[u8]) -> Result<Vec<u8>> {
+        let mut encoder = DeflateEncoder::new(Vec::with_capacity(data.len() / 2), flate2::Compression::new(self.options.level.min(9)));
+        encoder.write_all(data).map_err(|e| ArchiveError::io("compressing an entry", e))?;
+        encoder.finish().map_err(|e| ArchiveError::io("compressing an entry", e))
+    }
+
+    /// Chooses the method and produces the bytes to store. Stored data is borrowed, not copied.
+    fn compress<'a>(&self, entry: &NewEntry<'a>, name: &[u8]) -> Result<(u16, Cow<'a, [u8]>)> {
         if entry.is_dir || name == b"mimetype" {
-            return Ok((0, entry.data.to_vec()));
+            return Ok((0, Cow::Borrowed(entry.data)));
         }
-        let policy = entry.compression.unwrap_or(self.options.compression);
-        let deflated = || -> Result<Vec<u8>> {
-            let mut encoder = DeflateEncoder::new(Vec::with_capacity(entry.data.len() / 2), flate2::Compression::new(self.options.level.min(9)));
-            encoder.write_all(entry.data).map_err(|e| ArchiveError::io("compressing an entry", e))?;
-            encoder.finish().map_err(|e| ArchiveError::io("compressing an entry", e))
-        };
-        match policy {
-            Compression::Stored => Ok((0, entry.data.to_vec())),
-            Compression::Deflate => Ok((8, deflated()?)),
+        match entry.compression.unwrap_or(self.options.compression) {
+            Compression::Stored => Ok((0, Cow::Borrowed(entry.data))),
+            Compression::Deflate => Ok((8, Cow::Owned(self.deflate(entry.data)?))),
             Compression::Auto => {
                 if entry.data.is_empty() {
-                    return Ok((0, Vec::new()));
+                    return Ok((0, Cow::Borrowed(entry.data)));
                 }
-                let candidate = deflated()?;
-                if candidate.len() < entry.data.len() { Ok((8, candidate)) } else { Ok((0, entry.data.to_vec())) }
+                // Big media that is already compressed (MP3, JPEG, H.264, ...) would cost seconds to deflate for
+                // nothing: judge it from a sample first.
+                if let Some(head) = entry.data.get(..AUTO_SAMPLE_LEN).filter(|_| entry.data.len() > AUTO_SAMPLE_MIN_ENTRY) {
+                    let sample = self.deflate(head)?;
+                    if sample.len().saturating_mul(100) >= head.len().saturating_mul(AUTO_STORE_PERCENT) {
+                        return Ok((0, Cow::Borrowed(entry.data)));
+                    }
+                }
+                let candidate = self.deflate(entry.data)?;
+                if candidate.len() < entry.data.len() { Ok((8, Cow::Owned(candidate))) } else { Ok((0, Cow::Borrowed(entry.data))) }
             }
         }
     }
