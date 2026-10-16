@@ -161,7 +161,10 @@ pub fn chrome_raster(name: &str, svg: &str, w: u32, h: u32, virtual_ms: Option<u
                  seek();window.addEventListener('load',seek);}})();</script>\n"
             );
             seeked = match svg.rfind("</svg>") {
-                Some(at) => format!("{}{script}{}", &svg[..at], &svg[at..]),
+                Some(at) => {
+                    let (head, tail) = svg.split_at(at);
+                    format!("{head}{script}{tail}")
+                }
                 None => svg.to_owned(),
             };
             seeked.as_str()
