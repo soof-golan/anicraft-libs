@@ -16,6 +16,7 @@ use anim_text::TextEngine;
 use crate::ease;
 use crate::guide::Guide;
 use crate::images::{ImageProvider, NoDecoder};
+use crate::memo::Memo;
 use crate::motion::MotionTracks;
 use crate::text::text_nodes;
 use crate::tween::{self, Placed};
@@ -23,11 +24,8 @@ use crate::tween::{self, Placed};
 /// Most cached shape-tween plans before the cache is emptied.
 const MAX_PLANS: usize = 512;
 
-/// Most document shapes whose display nodes are kept; further shapes are converted on every use.
-const MAX_SHAPES: usize = 4096;
-
-/// Most timelines whose layer trees are kept.
-const MAX_TREES: usize = 4096;
+/// Most document shapes whose display nodes, and most timelines whose layer trees, are kept.
+const MAX_ITEMS: usize = 4096;
 
 /// Grey used for a bitmap whose pixels are not available.
 const MISSING_BITMAP: Rgba8 = Rgba8::new(128, 128, 128, 160);
@@ -106,15 +104,14 @@ pub struct Evaluator<'a> {
     text: Option<TextEngine>,
     options: EvalOptions,
     plans: HashMap<PlanKey, MorphPlan>,
-    /// Display nodes of the shapes stored in the document, by address (the document outlives the evaluator and is
-    /// not mutated while it is borrowed). Tweened shapes are temporaries and never enter.
-    shapes: HashMap<usize, Vec<Node>>,
-    /// Motion guides by the address of the keyframe that holds them.
-    guides: HashMap<usize, Option<Guide>>,
-    /// Motion-object tracks by the address of the keyframe that holds them.
-    motion: HashMap<usize, Option<MotionTracks>>,
-    /// Layer trees by the address of their timeline, taken out while the timeline is being drawn.
-    trees: HashMap<usize, Vec<LayerNode>>,
+    /// Display nodes of the shapes stored in the document. Tweened shapes are temporaries and never enter.
+    shapes: Memo<Vec<Node>>,
+    /// Motion guides by the keyframe that holds them.
+    guides: Memo<Option<Guide>>,
+    /// Motion-object tracks by the keyframe that holds them.
+    motion: Memo<Option<MotionTracks>>,
+    /// Layer trees by timeline, taken out while the timeline is being drawn.
+    trees: Memo<Vec<LayerNode>>,
 }
 
 impl std::fmt::Debug for Evaluator<'_> {
@@ -136,10 +133,10 @@ impl<'a> Evaluator<'a> {
             text: None,
             options: EvalOptions::default(),
             plans: HashMap::new(),
-            shapes: HashMap::new(),
-            guides: HashMap::new(),
-            motion: HashMap::new(),
-            trees: HashMap::new(),
+            shapes: Memo::new(MAX_ITEMS),
+            guides: Memo::new(MAX_PLANS),
+            motion: Memo::new(MAX_PLANS),
+            trees: Memo::new(MAX_ITEMS),
         }
     }
 
@@ -288,12 +285,9 @@ impl<'a> Evaluator<'a> {
 
     /// Appends the layers of `timeline` at `time` to `out`.
     fn timeline_nodes(&mut self, timeline: &'a Timeline, time: Time, state: &mut State<'a>, out: &mut Vec<Node>) {
-        let address = std::ptr::from_ref(timeline).addr();
-        let tree = self.trees.remove(&address).unwrap_or_else(|| timeline.layer_tree());
+        let tree = self.trees.take(timeline).unwrap_or_else(|| timeline.layer_tree());
         self.emit_layers(timeline, &tree, time, state, out);
-        if self.trees.len() < MAX_TREES {
-            self.trees.insert(address, tree);
-        }
+        self.trees.insert(timeline, tree);
     }
 
     /// Appends the layers bottom to top. `nodes` is top to bottom, as the tree lists them.
@@ -505,19 +499,12 @@ impl<'a> Evaluator<'a> {
 
     /// The property tracks of a motion-object keyframe, parsed once per evaluator; `None` when there are none.
     fn motion_tracks(&mut self, frame: &'a Frame) -> Option<&MotionTracks> {
-        if self.motion.len() >= MAX_PLANS {
-            self.motion.clear();
-        }
-        let xml = frame.motion_object_xml.as_deref();
-        self.motion.entry(std::ptr::from_ref(frame).addr()).or_insert_with(|| xml.and_then(MotionTracks::parse)).as_ref()
+        self.motion.get_or_insert_with(frame, || frame.motion_object_xml.as_deref().and_then(MotionTracks::parse)).as_ref()
     }
 
     /// The motion guide a keyframe holds, measured once per evaluator; `None` when it has no stroke.
     fn guide(&mut self, frame: &'a Frame) -> Option<&Guide> {
-        if self.guides.len() >= MAX_PLANS {
-            self.guides.clear();
-        }
-        self.guides.entry(std::ptr::from_ref(frame).addr()).or_insert_with(|| Guide::from_keyframe(frame)).as_ref()
+        self.guides.get_or_insert_with(frame, || Guide::from_keyframe(frame)).as_ref()
     }
 
     /// The nodes of a shape.
@@ -535,14 +522,11 @@ impl<'a> Evaluator<'a> {
 
     /// The nodes of a shape stored in the document, converted once per evaluator.
     fn stored_display(&mut self, shape: &'a EdgeShape) -> Vec<Node> {
-        let address = std::ptr::from_ref(shape).addr();
-        if let Some(nodes) = self.shapes.get(&address) {
+        if let Some(nodes) = self.shapes.get(shape) {
             return nodes.clone();
         }
         let nodes = self.display_of(shape);
-        if self.shapes.len() < MAX_SHAPES {
-            self.shapes.insert(address, nodes.clone());
-        }
+        self.shapes.insert(shape, nodes.clone());
         nodes
     }
 

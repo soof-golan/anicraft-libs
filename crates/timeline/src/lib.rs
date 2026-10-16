@@ -39,6 +39,7 @@ pub mod tween;
 pub mod xform;
 
 mod eval;
+mod memo;
 mod text;
 
 pub use eval::{EvalOptions, Evaluator, element_key, fade, split_key};
