@@ -241,7 +241,14 @@ const MAX_CONSECUTIVE_DECODE_ERRORS: u32 = 256;
 /// Most frames reserved up front from what the stream claims.
 const MAX_RESERVE_SAMPLES: usize = 1 << 24;
 
+/// Decodes with symphonia, turning a panic inside a codec (hostile input can overflow its arithmetic in debug builds)
+/// into a [`AudioError::Corrupt`] instead of taking the app down.
 fn decode_source(source: Box<dyn MediaSource>, name_hint: Option<&str>, limits: &DecodeLimits) -> Result<PcmBuffer> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode_source_unguarded(source, name_hint, limits)))
+        .unwrap_or_else(|_| Err(AudioError::Corrupt("the decoder failed on this data".into())))
+}
+
+fn decode_source_unguarded(source: Box<dyn MediaSource>, name_hint: Option<&str>, limits: &DecodeLimits) -> Result<PcmBuffer> {
     let mss = MediaSourceStream::new(source, symphonia::core::io::MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     if let Some(name) = name_hint {
