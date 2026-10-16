@@ -167,16 +167,7 @@ pub fn save(name: &str, image: &Image) {
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let Ok(mut writer) = encoder.write_header() else { return };
-    let straight: Vec<u8> = image
-        .premultiplied_rgba
-        .chunks_exact(4)
-        .flat_map(|px| {
-            let alpha = u32::from(px[3]);
-            let un = |c: u8| (u32::from(c) * 255 + alpha / 2).checked_div(alpha).map_or(0, |v| u8::try_from(v).unwrap_or(255));
-            [un(px[0]), un(px[1]), un(px[2]), px[3]]
-        })
-        .collect();
-    let _ = writer.write_image_data(&straight);
+    let _ = writer.write_image_data(&anim_render::straight_rgba(image));
 }
 
 /// A cheap deterministic pseudo-random sequence for hand-rolled fuzzing.
