@@ -259,8 +259,10 @@ impl Image {
     }
 
     pub fn save(&self, name: &str) -> PathBuf {
-        std::fs::create_dir_all(OUT_DIR).unwrap();
-        let path = PathBuf::from(OUT_DIR).join(name);
+        let shared = std::path::Path::new("/mnt/data/anim/scratch");
+        let dir = if shared.is_dir() { PathBuf::from(OUT_DIR) } else { std::env::temp_dir().join("anim-lipsync-visual") };
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
         let mut enc = png::Encoder::new(BufWriter::new(File::create(&path).unwrap()), self.w as u32, self.h as u32);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);

@@ -20,7 +20,10 @@ pub fn render_tree(tree: &ArtworkTree) -> (u32, u32, Vec<u8>) {
 }
 
 pub fn out_dir(component: &str) -> PathBuf {
-    let root = std::env::var_os("ANICRAFT_VISUAL_OUT").map_or_else(|| PathBuf::from("/mnt/data/anim/scratch/visual"), PathBuf::from);
+    // The shared scratch area only exists on the agents' machine; elsewhere use the temp dir.
+    let shared = Path::new("/mnt/data/anim/scratch");
+    let root = std::env::var_os("ANICRAFT_VISUAL_OUT")
+        .map_or_else(|| if shared.is_dir() { shared.join("visual") } else { std::env::temp_dir().join("anim-visual") }, PathBuf::from);
     root.join(component)
 }
 

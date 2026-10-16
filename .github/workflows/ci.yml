@@ -43,4 +43,4 @@ jobs:
       - run: rustup show
       - uses: jdx/mr-boxington-action@v1
       - run: mbx clippy --workspace --all-targets --locked -- -D warnings
-      - run: mbx test --workspace --locked
+      - run: mbx test --workspace --locked --no-fail-fast
