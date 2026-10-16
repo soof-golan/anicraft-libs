@@ -67,6 +67,39 @@ pub fn assert_px(what: &str, rgba: &[u8], width: u32, (x, y): (u32, u32), want: 
     assert!(ok, "{what}: pixel ({x},{y}) is {got:?}, expected {want:?} +-{tol}");
 }
 
+/// Assembles a PDF from object bodies (object `n` is `objects[n - 1]`; object 1 must be the catalog), with a
+/// correct cross-reference table.
+pub fn assemble_pdf(objects: &[String]) -> Vec<u8> {
+    let mut out = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, body) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n{body}\nendobj\n", i + 1).as_bytes());
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes());
+    out
+}
+
+/// A stream object body.
+pub fn stream_body(dict: &str, data: &str) -> String {
+    format!("<< {dict} /Length {} >>\nstream\n{data}\nendstream", data.len())
+}
+
+/// A PDF text string in UTF-16BE with a byte order mark, as a hex string literal.
+pub fn utf16_hex(text: &str) -> String {
+    let mut hex = String::from("<FEFF");
+    for unit in text.encode_utf16() {
+        hex.push_str(&format!("{unit:04X}"));
+    }
+    hex.push('>');
+    hex
+}
+
 /// Compares against `tests/golden/<name>.png` (written when missing or when `UPDATE_GOLDENS` is set).
 #[track_caller]
 pub fn golden(name: &str, width: u32, height: u32, rgba: &[u8], tol: u8) {
