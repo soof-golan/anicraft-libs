@@ -56,6 +56,19 @@ pub fn visual_runs(layout: &TextLayout) -> Vec<(Range<usize>, bool)> {
     runs.into_iter().map(|r| (r.range.clone(), r.rtl)).collect()
 }
 
+/// Like [`visual_runs`], but neighbouring runs of one direction that touch in the text are merged: a system may split a
+/// run where its font fallback changes (for example at a space), which says nothing about bidi order.
+pub fn visual_spans(layout: &TextLayout) -> Vec<(Range<usize>, bool)> {
+    let mut out: Vec<(Range<usize>, bool)> = Vec::new();
+    for (range, rtl) in visual_runs(layout) {
+        match out.last_mut() {
+            Some((prev, prev_rtl)) if *prev_rtl == rtl && !rtl && prev.end == range.start => prev.end = range.end,
+            _ => out.push((range, rtl)),
+        }
+    }
+    out
+}
+
 /// Every character boundary of the layout's text, including 0 and the length.
 pub fn boundaries(layout: &TextLayout) -> Vec<usize> {
     let text = layout.text();

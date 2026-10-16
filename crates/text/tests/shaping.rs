@@ -40,8 +40,10 @@ fn bold_and_italic_change_the_shaped_glyphs_or_widths() {
     let bold = engine.layout(&RichText::new(vec![Paragraph::new(vec![Run { bold: true, ..run("Quick brown fox") }])]), None);
     let italic = engine.layout(&RichText::new(vec![Paragraph::new(vec![Run { italic: true, ..run("Quick brown fox") }])]), None);
     // Glyph ids can be shared between the weights of one family, so look at the font face, the synthesis flags and widths.
-    assert!(bold.runs[0].embolden || bold.runs[0].font.id != plain.runs[0].font.id, "bold must come from a bold face or be synthesised");
-    assert!(italic.runs[0].skew_degrees > 0.0 || italic.runs[0].font.id != plain.runs[0].font.id, "italic must come from an italic face or be synthesised");
+    // A variable system font (macOS) keeps one face and changes the variation coordinates instead.
+    let differs = |a: &anim_text::GlyphRun, b: &anim_text::GlyphRun| a.font.id != b.font.id || a.font.coords != b.font.coords;
+    assert!(bold.runs[0].embolden || differs(&bold.runs[0], &plain.runs[0]), "bold must come from a bold face or be synthesised");
+    assert!(italic.runs[0].skew_degrees > 0.0 || differs(&italic.runs[0], &plain.runs[0]), "italic must come from an italic face or be synthesised");
     assert!(plain.runs[0].skew_degrees == 0.0 && !plain.runs[0].embolden);
     assert_eq!(glyph_ids(&plain).len(), glyph_ids(&bold).len());
 }
@@ -119,8 +121,8 @@ fn letter_spacing_leaves_arabic_joined_but_spaces_latin() {
 fn mixed_paragraph_reorders_the_hebrew_run_only() {
     let Some(mut engine) = engine_for(&[Script::Hebrew]) else { return };
     let layout = engine.layout(&one("abc שלום def"), None);
-    let visual = visual_runs(&layout);
-    assert_eq!(visual, vec![(0..4, false), (4..12, true), (12..13, false), (13..16, false)], "{visual:?}");
+    let visual = common::visual_spans(&layout);
+    assert_eq!(visual, vec![(0..4, false), (4..12, true), (12..16, false)], "{visual:?}");
     // Glyph x positions strictly increase across the whole line.
     let xs: Vec<f64> = {
         let mut runs: Vec<_> = layout.runs.iter().collect();
@@ -169,16 +171,16 @@ fn explicit_direction_overrides_the_first_strong_character() {
 #[test]
 fn brackets_are_mirrored_in_right_to_left_text() {
     let Some(mut engine) = engine_for(&[Script::Hebrew]) else { return };
-    let ltr = engine.layout(&para("()", Alignment::Left, Direction::Ltr), None);
-    let ids = glyph_ids(&ltr);
-    assert_eq!(ids.len(), 2);
-    let (open, close) = (ids[0], ids[1]);
-    assert_ne!(open, close);
-    // Logical "(ש)" in a right-to-left line: the opening bracket is at the right and is drawn with the closing glyph.
+    // Logical "(ש)" in a right-to-left line: the opening bracket is at the right and is drawn with the closing glyph,
+    // so on screen the line looks exactly like the left-to-right line "(ש)" (same text pieces, hence the same fonts on
+    // any system) and unlike ")ש(".
     let rtl = engine.layout(&para("(ש)", Alignment::Start, Direction::Rtl), None);
+    let ltr = engine.layout(&para("(ש)", Alignment::Left, Direction::Ltr), None);
+    let swapped = engine.layout(&para(")ש(", Alignment::Left, Direction::Ltr), None);
     let visual = glyph_ids(&rtl);
     assert_eq!(visual.len(), 3);
-    assert_eq!((visual[0], visual[2]), (open, close), "mirrored: {visual:?} vs open {open} close {close}");
+    assert_eq!(visual, glyph_ids(&ltr), "mirrored brackets");
+    assert_ne!(visual, glyph_ids(&swapped), "the bracket glyphs are swapped, not kept");
 }
 
 #[test]
@@ -199,5 +201,7 @@ fn colours_and_sizes_split_runs_without_changing_the_text() {
     assert!(layout.runs.iter().any(|r| r.color == red && r.range.start == 0));
     assert!(layout.runs.iter().any(|r| (r.size - 40.0).abs() < 1e-6 && r.range.start >= 4));
     let line = &layout.lines[0];
-    assert!(line.rect.height() > 40.0, "the line is as tall as its biggest run");
+    // Font metrics differ per system (a 40 px line can be a bit under 40 px tall), so compare with the small run alone.
+    let small = engine.layout(&one("red "), None);
+    assert!(line.rect.height() > small.lines[0].rect.height() * 1.4, "the line is as tall as its biggest run");
 }
