@@ -197,10 +197,10 @@ impl MotionObject {
         Some(Self { tracks })
     }
 
-    /// The `<AnimationCore>` document of these tracks.
+    /// The `<motionObjectXML>` element of these tracks, as the frame keeps it.
     #[must_use]
     pub fn to_xml(&self) -> String {
-        let mut out = format!("<AnimationCore TimeScale=\"{TIME_UNITS}\" duration=\"{TIME_UNITS}\"><PropertyContainer id=\"Basic_Motion\">");
+        let mut out = format!("<motionObjectXML><AnimationCore TimeScale=\"{TIME_UNITS}\" duration=\"{TIME_UNITS}\"><PropertyContainer id=\"Basic_Motion\">");
         for track in &self.tracks {
             let _ = write!(out, "<Property id=\"{}\">", track.prop.xfl_id());
             for key in &track.keys {
@@ -216,7 +216,7 @@ impl MotionObject {
             }
             out.push_str("</Property>");
         }
-        out.push_str("</PropertyContainer></AnimationCore>");
+        out.push_str("</PropertyContainer></AnimationCore></motionObjectXML>");
         out
     }
 
