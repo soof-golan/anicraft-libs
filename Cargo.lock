@@ -236,6 +236,7 @@ name = "anim-lipsync"
 version = "0.1.0"
 dependencies = [
  "anim-core",
+ "png",
  "proptest",
  "rustfft",
  "serde",
