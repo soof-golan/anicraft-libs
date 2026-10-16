@@ -9,7 +9,6 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use anim_core::kurbo::Shape;
 use anim_core::num::f64_to_f32;
 use anim_core::{Rect, Rgba8, Vec2};
 use anim_display::Node;
@@ -152,20 +151,7 @@ impl TextEngine {
     /// underlines themselves, not the line boxes. `None` when nothing is drawn (empty text, spaces, transparent colour).
     /// Useful for auto-sized text and for selection frames that hug the letters.
     pub fn ink_bounds(&mut self, layout: &TextLayout) -> Option<Rect> {
-        let mut total: Option<Rect> = None;
-        for node in self.outlines.display(layout) {
-            let (path, grow) = match &node {
-                Node::Fill(fill) => (&fill.path, 0.0),
-                Node::Stroke(stroke) => (&stroke.path, stroke.style.width / 2.0),
-                _ => continue,
-            };
-            if path.elements().is_empty() {
-                continue;
-            }
-            let bounds = path.bounding_box().inflate(grow, grow);
-            total = Some(total.map_or(bounds, |t| t.union(bounds)));
-        }
-        total
+        self.outlines.ink_bounds(layout)
     }
 
     /// Shapes and lays out `text`. With `max_width` lines wrap at that width (a single word wider than it overflows);

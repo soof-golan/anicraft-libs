@@ -132,7 +132,9 @@ fn display_benches(c: &mut Criterion) {
     let layout = engine.layout(&document(200, Alignment::Start), Some(400.0));
     let nodes = engine.to_display(&layout);
     if std::env::var_os("BENCH_CHECKSUM").is_some() {
-        eprintln!("checksum display: {} nodes", nodes.len());
+        let text = format!("{nodes:?} {:?}", engine.ink_bounds(&layout));
+        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+        eprintln!("checksum display: {} nodes {hash:016x}", nodes.len());
     }
     group.bench_function("to_display-warm", |b| b.iter(|| black_box(engine.to_display(black_box(&layout)))));
     group.bench_function("to_display-cold", |b| b.iter(|| black_box(layout.to_display())));

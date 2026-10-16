@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use anim_core::kurbo::Shape;
-use anim_core::{Affine, BezPath};
+use anim_core::{Affine, BezPath, Rect};
 use anim_display::{Cap, Fill, FillRule, Join, Node, Paint, Stroke, StrokeScale, StrokeStyle};
 use skrifa::instance::{LocationRef, NormalizedCoord, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
@@ -94,12 +94,32 @@ impl OutlineCache {
             if path.elements().is_empty() {
                 continue;
             }
-            let mut placed = path.clone();
-            placed.apply_affine(Affine::translate((g.x, g.y)) * scale * shear);
-            out.extend(placed.iter());
+            let place = Affine::translate((g.x, g.y)) * scale * shear;
+            out.extend(path.elements().iter().map(|&element| place * element));
         }
         self.glyphs = self.glyphs.saturating_add(added);
         out
+    }
+
+    /// The tight bounding box of everything [`display`](Self::display) draws for `layout`.
+    pub fn ink_bounds(&mut self, layout: &TextLayout) -> Option<Rect> {
+        let mut total: Option<Rect> = None;
+        let mut add = |bounds: Rect| total = Some(total.map_or(bounds, |t| t.union(bounds)));
+        for run in &layout.runs {
+            if run.color.a == 0 {
+                continue;
+            }
+            let path = self.run_path(run);
+            if !path.elements().is_empty() {
+                // The stroke of synthetic bold reaches past the fill.
+                let grow = if run.embolden { run.size * EMBOLDEN_EM / 2.0 } else { 0.0 };
+                add(path.bounding_box().inflate(grow, grow));
+            }
+            if let Some(rect) = run.underline {
+                add(rect.to_path(0.1).bounding_box());
+            }
+        }
+        total
     }
 
     /// The nodes that draw `layout`: per run a fill (plus a stroke for synthetic bold) and an optional underline.
