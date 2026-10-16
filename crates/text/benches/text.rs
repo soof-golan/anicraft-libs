@@ -214,17 +214,11 @@ fn query_benches(c: &mut Criterion) {
     let many = engine.layout(&RichText::new((0..4000).map(|i| Paragraph::from_text(format!("שלום {i} abc"))).collect()), Some(300.0));
     let starts: Vec<usize> = many.paragraphs.iter().map(|p| p.range.start).collect();
     if std::env::var_os("BENCH_CHECKSUM").is_some() {
-        let text: String = starts
+        let results: Vec<_> = starts
             .iter()
-            .map(|&o| {
-                format!(
-                    "{:?}{:?}{:?}",
-                    many.caret_rect(many.caret_at(o + 1), 1.0),
-                    many.word_range_at(o + 2),
-                    many.selection_rects(o.saturating_sub(3)..o + 5)
-                )
-            })
+            .map(|&o| (many.caret_rect(many.caret_at(o + 1), 1.0), many.word_range_at(o + 2), many.selection_rects(o.saturating_sub(3)..o + 5)))
             .collect();
+        let text = format!("{results:?}");
         let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
         eprintln!("checksum queries: {hash:016x}");
     }
