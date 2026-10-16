@@ -48,6 +48,12 @@ pub fn compose(d: &Decomposed) -> Affine {
     Affine::new([d.sx * d.rotation.cos(), d.sx * d.rotation.sin(), -d.sy * phi.sin(), d.sy * phi.cos(), d.tx, d.ty])
 }
 
+/// `a` at `t = 0`, `b` at `t = 1`.
+#[must_use]
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    (b - a).mul_add(t, a)
+}
+
 /// Wraps an angle to `(-pi, pi]`.
 #[must_use]
 pub fn wrap_angle(a: f64) -> f64 {
@@ -99,7 +105,6 @@ impl Progress {
 #[must_use]
 pub fn interpolate(a: Affine, b: Affine, progress: Progress, params: &TweenParams) -> Affine {
     let (da, db) = (decompose(a), decompose(b));
-    let lerp = |x: f64, y: f64, t: f64| (y - x).mul_add(t, x);
     let times = if params.times.is_finite() { params.times.max(0.0) } else { 1.0 };
     // Total change of the rotation over the tween, and of the skew.
     let turn = match params.rotate {

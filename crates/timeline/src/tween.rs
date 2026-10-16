@@ -7,7 +7,7 @@ use anim_scene::{EaseTarget, Element, Frame, InstanceFilter, SymbolInstance};
 
 use crate::ease;
 use crate::guide::{Guide, follow};
-use crate::xform::{self, Progress, TweenParams};
+use crate::xform::{self, Progress, TweenParams, lerp};
 
 /// One element as it is drawn in a frame: the source element with the properties a tween may have changed.
 #[derive(Debug, Clone)]
@@ -109,10 +109,6 @@ fn compatible(a: &Element, b: &Element) -> bool {
 #[must_use]
 pub fn lerp_filters(a: &[Filter], b: &[Filter], t: f64) -> Vec<Filter> {
     a.iter().enumerate().map(|(i, fa)| b.get(i).map_or_else(|| fa.clone(), |fb| lerp_filter(fa, fb, t))).collect()
-}
-
-fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    (b - a).mul_add(t, a)
 }
 
 fn lerp_filter(a: &Filter, b: &Filter, t: f64) -> Filter {
