@@ -102,7 +102,17 @@ fn ocg_layers_pdf() -> Vec<u8> {
 EMC
 /OC /L2 BDC 1 1 0 rg 10 60 10 10 re f EMC
 ";
-    Spec { width: 100, height: 100, layers: &layers, config: "/Order [{L1} {L2} {L3} {L4} [{L5}]] /OFF [{L3}]", content, ext_gstate: "", extra: vec![], properties_extra: "" }.build()
+    Spec {
+        width: 100,
+        height: 100,
+        layers: &layers,
+        config: "/Order [{L1} {L2} {L3} {L4} [{L5}]] /OFF [{L3}]",
+        content,
+        ext_gstate: "",
+        extra: vec![],
+        properties_extra: "",
+    }
+    .build()
 }
 
 #[test]
@@ -182,9 +192,17 @@ fn pdf_transparency() {
 /OC /L2 BDC q /GS1 gs 1 0 0 rg 10 10 30 30 re f Q EMC
 /OC /L3 BDC q /GS2 gs 1 1 0 rg 60 10 30 30 re f Q EMC
 ";
-    let bytes =
-        Spec { width: 100, height: 50, layers: &layers, config: "", content, ext_gstate: "/GS1 << /ca 0.5 >> /GS2 << /BM /Multiply >>", extra: vec![], properties_extra: "" }
-            .build();
+    let bytes = Spec {
+        width: 100,
+        height: 50,
+        layers: &layers,
+        config: "",
+        content,
+        ext_gstate: "/GS1 << /ca 0.5 >> /GS2 << /BM /Multiply >>",
+        extra: vec![],
+        properties_extra: "",
+    }
+    .build();
     let tree = import(&bytes);
     let (w, h, rgba) = render_tree(&tree);
     save(OUT, "pdf_transparency", w, h, &rgba, 8);
@@ -244,7 +262,11 @@ fn hostile_layer_structures_do_not_panic() {
         ("unbalanced EMC", String::new(), "EMC EMC EMC /OC /L1 BDC 1 0 0 rg 0 0 5 5 re f".to_owned()),
         ("missing property", String::new(), "/OC /Nope BDC 1 0 0 rg 0 0 5 5 re f EMC".to_owned()),
         ("5000 nested marked content", String::new(), deep),
-        ("all off with base state off and nothing on", "/BaseState /OFF".to_owned(), "/OC /L1 BDC 1 0 0 rg 0 0 5 5 re f EMC /OC /L2 BDC 0 1 0 rg 5 5 5 5 re f EMC".to_owned()),
+        (
+            "all off with base state off and nothing on",
+            "/BaseState /OFF".to_owned(),
+            "/OC /L1 BDC 1 0 0 rg 0 0 5 5 re f EMC /OC /L2 BDC 0 1 0 rg 5 5 5 5 re f EMC".to_owned(),
+        ),
     ];
     for (what, config, content) in cases {
         let mut spec = Spec { width: 20, height: 20, layers: &layers, config: &config, content: &content, ext_gstate: "", extra: vec![], properties_extra: "" };
