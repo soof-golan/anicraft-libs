@@ -343,7 +343,9 @@ async fn open_save_new_round_trip() {
     client.call_tool("save_document", json!({ "path": path.to_str().unwrap() })).await;
     let status = client.call_tool("session_status", json!({})).await;
     assert_eq!(status["structuredContent"]["dirty"], false);
-    assert_eq!(status["structuredContent"]["path"], path.to_str().unwrap());
+    // The session reports the canonical path (macOS /private, Windows \\?\ prefixes).
+    let reported = std::path::PathBuf::from(status["structuredContent"]["path"].as_str().unwrap());
+    assert_eq!(reported.canonicalize().unwrap(), path.canonicalize().unwrap());
     client.call_tool("new_document", json!({})).await;
     assert_eq!(client.call_tool("query_layer_names", json!({})).await["structuredContent"]["names"], json!([]));
     let opened = client.call_tool("open_document", json!({ "path": path.to_str().unwrap() })).await;
