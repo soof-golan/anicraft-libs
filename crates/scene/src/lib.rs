@@ -26,6 +26,7 @@
     allow(clippy::assert_is_empty, clippy::field_reassign_with_default, reason = "assertions on emptiness and default-then-tweak setup read better in tests")
 )]
 
+pub mod armature;
 pub mod bounds;
 pub mod document;
 pub mod edit;
@@ -38,6 +39,7 @@ pub mod query;
 pub mod timeline;
 pub mod validate;
 
+pub use armature::{Armature, ArmatureBone, ArmatureKind, Pose};
 pub use bounds::{MAX_SYMBOL_DEPTH, element_bounds, elements_bounds, timeline_bounds};
 pub use document::{Document, LAYER_COLORS, TimelineId};
 pub use element::{

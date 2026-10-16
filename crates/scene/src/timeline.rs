@@ -6,6 +6,7 @@
 use anim_core::{Point, Rgba8};
 use serde::{Deserialize, Serialize};
 
+use crate::armature::{Armature, Pose};
 use crate::element::Element;
 use crate::extra::Extra;
 
@@ -352,6 +353,9 @@ pub struct Frame {
     pub actionscript: Option<String>,
     /// `<motionObjectXML>` of a motion-object tween, verbatim.
     pub motion_object_xml: Option<String>,
+    /// The armature pose this keyframe sets (armature layers only).
+    #[serde(default)]
+    pub pose: Option<Pose>,
     pub elements: Vec<Element>,
     pub extra: Extra,
 }
@@ -381,6 +385,7 @@ impl Frame {
             sound: None,
             actionscript: None,
             motion_object_xml: None,
+            pose: None,
             elements,
             extra: Extra::new(),
         }
@@ -467,6 +472,9 @@ pub struct Layer {
     pub autoname: bool,
     /// Keyframes sorted by `index`.
     pub frames: Vec<Frame>,
+    /// The bones of an armature layer; the artwork they move is in the first keyframe.
+    #[serde(default)]
+    pub armature: Option<Armature>,
     pub extra: Extra,
 }
 
@@ -484,8 +492,15 @@ impl Layer {
             outline: false,
             autoname: false,
             frames: Vec::new(),
+            armature: None,
             extra: Extra::new(),
         }
+    }
+
+    /// The keyframe whose elements are an armature's artwork at rest: the first one.
+    #[must_use]
+    pub fn rest_keyframe(&self) -> Option<&Frame> {
+        self.frames.first()
     }
 
     /// One past the last frame any keyframe covers.
