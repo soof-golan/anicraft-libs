@@ -12,6 +12,7 @@ use crossbeam_channel::{Receiver as ProgressReceiver, Sender as ProgressSender, 
 use filmcraft_isobmff::{Brand, FourCc, Mp4Writer, PcmConfig, SampleEntry, TrackConfig, WriteSample, WriterOptions};
 
 use crate::convert::{rgba_to_prores, rgba_to_yuv420};
+use crate::segment::Segment;
 use crate::{AudioTrack, Codec, H264Rate, Progress, Summary, VideoError, VideoSettings};
 
 /// Frames that may wait for the encoder before `send_frame` blocks.
@@ -23,6 +24,7 @@ type Result<T> = std::result::Result<T, VideoError>;
 
 enum Command {
     Frame(Image),
+    Segment(Segment),
     Finish,
     Cancel,
 }
@@ -73,18 +75,29 @@ impl EncoderHandle {
     /// [`VideoError::WrongFrameSize`] / [`VideoError::InvalidFrame`] for a bad image (nothing is queued), and
     /// [`VideoError::EncoderStopped`] if the thread died; [`finish`](Self::finish) then returns the real cause.
     pub fn send_frame(&mut self, frame: Image) -> Result<()> {
-        if (frame.width, frame.height) != (self.width, self.height) {
-            return Err(VideoError::WrongFrameSize { width: self.width, height: self.height, got_width: frame.width, got_height: frame.height });
-        }
-        if Image::byte_len(frame.width, frame.height) != Some(frame.premultiplied_rgba.len()) {
-            return Err(VideoError::InvalidFrame(format!("{} bytes do not match {}x{} RGBA", frame.premultiplied_rgba.len(), frame.width, frame.height)));
-        }
+        check_frame(self.width, self.height, &frame)?;
         self.commands.send(Command::Frame(frame)).map_err(|_| VideoError::EncoderStopped)?;
         self.sent = self.sent.saturating_add(1);
         Ok(())
     }
 
-    /// Frames accepted by [`send_frame`](Self::send_frame) so far.
+    /// Queues a segment encoded elsewhere (see [`SegmentEncoder`](crate::SegmentEncoder)), blocking while the queue is
+    /// full. Segments must arrive in frame order and cannot be mixed with [`send_frame`](Self::send_frame).
+    ///
+    /// # Errors
+    /// [`VideoError::InvalidFrame`] when the segment does not start at the next frame, and
+    /// [`VideoError::EncoderStopped`] if the thread died; [`finish`](Self::finish) then returns the real cause.
+    pub fn send_segment(&mut self, segment: Segment) -> Result<()> {
+        if segment.first_frame() != self.sent {
+            return Err(VideoError::InvalidFrame(format!("segment starts at frame {} but the next frame is {}", segment.first_frame(), self.sent)));
+        }
+        let frames = segment.frames();
+        self.commands.send(Command::Segment(segment)).map_err(|_| VideoError::EncoderStopped)?;
+        self.sent = self.sent.saturating_add(frames);
+        Ok(())
+    }
+
+    /// Frames accepted by [`send_frame`](Self::send_frame) and [`send_segment`](Self::send_segment) so far.
     #[must_use]
     pub const fn frames_sent(&self) -> u64 {
         self.sent
@@ -139,6 +152,10 @@ fn drive(path: &Path, settings: VideoSettings, commands: &Receiver<Command>, pro
                 job.push(&image)?;
                 let _ = progress.send(Progress::Encoded { frames: job.frames });
             }
+            Ok(Command::Segment(segment)) => {
+                job.push_segment(segment)?;
+                let _ = progress.send(Progress::Encoded { frames: job.frames });
+            }
             Ok(Command::Finish) => return job.finish(),
             // An explicit cancel, or the handle was dropped.
             Ok(Command::Cancel) | Err(_) => return Err(VideoError::Cancelled),
@@ -154,21 +171,42 @@ fn mux_err(e: impl std::fmt::Display) -> VideoError {
     VideoError::Mux(e.to_string())
 }
 
+/// Frames between H.264 key frames: two seconds.
+pub fn h264_keyint(fps: FrameRate) -> u32 {
+    let num = u32::try_from(fps.num).unwrap_or(1);
+    let den = u32::try_from(fps.den).unwrap_or(1);
+    num.saturating_mul(2).checked_div(den).unwrap_or(1).max(1)
+}
+
+/// Refuses an image that is not `width` x `height` or whose buffer does not match its size.
+pub fn check_frame(width: u32, height: u32, frame: &Image) -> Result<()> {
+    if (frame.width, frame.height) != (width, height) {
+        return Err(VideoError::WrongFrameSize { width, height, got_width: frame.width, got_height: frame.height });
+    }
+    if Image::byte_len(frame.width, frame.height) != Some(frame.premultiplied_rgba.len()) {
+        return Err(VideoError::InvalidFrame(format!("{} bytes do not match {}x{} RGBA", frame.premultiplied_rgba.len(), frame.width, frame.height)));
+    }
+    Ok(())
+}
+
 /// One encoded video sample.
-struct Packet {
+#[derive(Debug)]
+pub struct Packet {
     data: Vec<u8>,
     key: bool,
     /// pts minus dts, in the track timescale.
     cto: i32,
 }
 
-enum VideoEncoder {
+pub enum VideoEncoder {
     H264 { enc: Box<filmcraft_h264enc::Encoder>, y: Vec<u8>, u: Vec<u8>, v: Vec<u8> },
     ProRes { enc: filmcraft_prores::Encoder, profile: filmcraft_prores::Profile, alpha: bool },
 }
 
 impl VideoEncoder {
-    fn new(settings: &VideoSettings) -> Result<Self> {
+    /// An encoder for `settings`. `threads` is the H.264 worker count (0 = every core); 1 encodes each picture on the
+    /// calling thread as one slice.
+    pub(crate) fn new(settings: &VideoSettings, threads: usize) -> Result<Self> {
         let (w, h) = (settings.width, settings.height);
         match settings.codec {
             Codec::H264 { rate } => {
@@ -177,9 +215,10 @@ impl VideoEncoder {
                 let mut cfg = filmcraft_h264enc::EncoderConfig::new(w, h, num, den);
                 cfg.format = filmcraft_h264enc::PacketFormat::LengthPrefixed;
                 cfg.aud = false;
+                cfg.threads = threads;
                 // No B-frames: presentation order equals decode order, so no composition offsets or edit lists.
                 cfg.bframes = 0;
-                cfg.keyint = num.saturating_mul(2).checked_div(den).unwrap_or(1).max(1);
+                cfg.keyint = h264_keyint(settings.fps);
                 cfg.rate = match rate {
                     H264Rate::Bitrate { kbps } => filmcraft_h264enc::RateControl::Vbr { target_kbps: kbps, max_kbps: kbps.saturating_add(kbps / 2) },
                     H264Rate::Quality { crf } => filmcraft_h264enc::RateControl::Crf(crf),
@@ -196,7 +235,7 @@ impl VideoEncoder {
         }
     }
 
-    fn encode(&mut self, image: &Image, index: u64, fps: FrameRate) -> Result<Vec<Packet>> {
+    pub(crate) fn encode(&mut self, image: &Image, index: u64, fps: FrameRate) -> Result<Vec<Packet>> {
         let (px, _) = image.premultiplied_rgba.as_chunks::<4>();
         let width = anim_core::num::u32_to_usize(image.width);
         match self {
@@ -216,7 +255,7 @@ impl VideoEncoder {
         }
     }
 
-    fn flush(&mut self) -> Vec<Packet> {
+    pub(crate) fn flush(&mut self) -> Vec<Packet> {
         match self {
             Self::H264 { enc, .. } => enc.flush().into_iter().map(h264_packet).collect(),
             Self::ProRes { .. } => Vec::new(),
@@ -274,13 +313,25 @@ struct Job {
 
 impl Job {
     fn new(path: &Path, settings: VideoSettings) -> Result<Self> {
-        let encoder = VideoEncoder::new(&settings)?;
+        let encoder = VideoEncoder::new(&settings, 0)?;
         Ok(Self { path: path.to_path_buf(), settings, encoder, muxer: None, frames: 0 })
     }
 
     fn push(&mut self, image: &Image) -> Result<()> {
         let packets = self.encoder.encode(image, self.frames, self.settings.fps)?;
-        self.frames = self.frames.saturating_add(1);
+        self.write(packets, 1)
+    }
+
+    /// Writes a segment encoded elsewhere. This job's own encoder only supplies the parameter sets, which every
+    /// segment's encoder shares because it was configured from the same settings.
+    fn push_segment(&mut self, segment: Segment) -> Result<()> {
+        let (frames, packets) = segment.into_parts();
+        self.write(packets, frames)
+    }
+
+    /// Muxes `packets`, which cover `frames` more frames, and the soundtrack up to the end of them.
+    fn write(&mut self, packets: Vec<Packet>, frames: u64) -> Result<()> {
+        self.frames = self.frames.saturating_add(frames);
         // The encoders finalise their parameter sets on the first frame, so the tracks are created after it.
         if self.muxer.is_none() {
             self.muxer = Some(self.open_muxer()?);

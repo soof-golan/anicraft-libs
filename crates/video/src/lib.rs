@@ -22,6 +22,9 @@
 //! # }
 //! ```
 //!
+//! Many cores: [`SegmentEncoder`] encodes the stretch between two key frames on its own, so a pool of workers can render
+//! and encode different segments at once and hand them to [`EncoderHandle::send_segment`] in order; see [`SegmentPlan`].
+//!
 //! Pixels: frames are premultiplied RGBA8 ([`anim_display::Image`]). MP4 has no alpha, so the picture is encoded as if
 //! composited over black. `ProRes` 4444 with `alpha: true` stores straight colour plus a 10-bit alpha plane;
 //! with `alpha: false` it is composited over black like MP4. Colour is BT.709 limited range.
@@ -31,12 +34,14 @@
 
 mod convert;
 mod encoder;
+mod segment;
 
 use std::path::PathBuf;
 
 use anim_core::{FrameRate, Tick};
 
 pub use encoder::{EncoderHandle, encode_to_file, start};
+pub use segment::{Segment, SegmentEncoder, SegmentPlan};
 
 /// Largest accepted frame side, in pixels.
 pub const MAX_DIMENSION: u32 = 16_384;

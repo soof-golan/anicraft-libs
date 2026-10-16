@@ -294,6 +294,109 @@ fn settings_validation_covers_every_limit() {
     assert_eq!(Codec::ProRes4444 { alpha: true }.extension(), "mov");
 }
 
+/// Encodes `total` opaque frames in the segments planned for `cores` cores, as a worker pool would.
+fn encode_segmented(path: &Path, s: &VideoSettings, total: u64, cores: usize) -> Summary {
+    let plan = s.segment_plan(total, cores);
+    let mut job = start(path, s.clone()).unwrap();
+    let mut encoder = SegmentEncoder::new(s, plan.threads_each).unwrap();
+    // Encode the segments last to first to show that only the send order matters.
+    let starts: Vec<u64> = (0..plan.segments).map(|i| i * plan.frames_per_segment).collect();
+    let mut done = Vec::new();
+    for &first in starts.iter().rev() {
+        encoder.start(first).unwrap();
+        for t in first..(first + plan.frames_per_segment).min(total) {
+            encoder.push(&frame(u32::try_from(t % 16).unwrap(), true)).unwrap();
+        }
+        done.push(encoder.finish().unwrap());
+    }
+    for segment in done.into_iter().rev() {
+        job.send_segment(segment).unwrap();
+    }
+    job.finish().unwrap()
+}
+
+#[test]
+fn segment_plans_follow_the_key_frame_interval_and_the_rate_control() {
+    let crf = settings(Codec::H264 { rate: H264Rate::Quality { crf: 20.0 } });
+    // 24 fps: a key frame every 48 frames.
+    assert_eq!(crf.segment_plan(100, 8), SegmentPlan { frames_per_segment: 48, segments: 3, threads_each: 2 });
+    assert_eq!(crf.segment_plan(3009, 24), SegmentPlan { frames_per_segment: 48, segments: 63, threads_each: 1 });
+    assert_eq!(crf.segment_plan(10, 24), SegmentPlan { frames_per_segment: 48, segments: 1, threads_each: 24 });
+    assert_eq!(crf.segment_plan(0, 0), SegmentPlan { frames_per_segment: 48, segments: 1, threads_each: 1 });
+    let abr = settings(Codec::H264 { rate: H264Rate::Bitrate { kbps: 400 } });
+    assert_eq!(abr.segment_plan(500, 8).segments, 1, "bitrate control keeps state across the whole video");
+    let prores = settings(Codec::ProRes4444 { alpha: false });
+    assert_eq!(prores.segment_plan(20, 4), SegmentPlan { frames_per_segment: 8, segments: 3, threads_each: 1 });
+}
+
+#[test]
+fn segmented_h264_is_one_valid_stream_with_a_key_frame_per_segment() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("seg.mp4");
+    let s = settings(Codec::H264 { rate: H264Rate::Quality { crf: 18.0 } }).with_audio(sine(48_000, 2, 5, 1));
+    let summary = encode_segmented(&path, &s, 100, 8);
+    assert_eq!((summary.frames, summary.has_audio), (100, true));
+    let (mp4, bytes) = demux(&path);
+    let v = &mp4.tracks[mp4.track_of_kind(TrackKind::Video).unwrap()];
+    assert_eq!(v.samples.len(), 100);
+    assert!(v.samples.iter().enumerate().all(|(i, s)| s.pts == s.dts && s.pts == i64::try_from(i).unwrap()), "timestamps run in frame order");
+    let sync: Vec<usize> = v.samples.iter().enumerate().filter(|(_, s)| s.is_sync).map(|(i, _)| i).collect();
+    assert_eq!(sync, [0, 48, 96]);
+    let Some(CodecConfig::Avc(avc)) = v.codec() else { panic!("not AVC") };
+    let mut dec = filmcraft_h264::Decoder::from_avcc(&avc.to_bytes()).unwrap();
+    let mut pictures = Vec::new();
+    for i in 0..v.samples.len() {
+        pictures.extend(dec.decode(&mp4.read_sample(&bytes, mp4.track_of_kind(TrackKind::Video).unwrap(), i).unwrap(), v.samples[i].pts).unwrap());
+    }
+    pictures.extend(dec.flush());
+    assert_eq!(pictures.len(), 100);
+    // The picture moves right by one column per frame (mod 16): the red/green boundary is where the content says.
+    for i in [0_usize, 47, 48, 49, 99] {
+        let p = &pictures[i];
+        let t = i % 16;
+        let row = &p.y[..p.y_stride];
+        let red_luma = f64::from(row[8]);
+        let green_luma = f64::from(row[W as usize - 8]);
+        assert!(green_luma > red_luma + 20.0, "frame {i}: red {red_luma} green {green_luma}");
+        let edge = row[..W as usize].windows(2).position(|w| i16::from(w[1]) - i16::from(w[0]) > 30).unwrap();
+        assert!(edge.abs_diff(31 + t) <= 2, "frame {i}: boundary at {edge}, expected near {}", 31 + t);
+    }
+    // The soundtrack is complete and ordered after the video it belongs to.
+    let a = &mp4.tracks[mp4.track_of_kind(TrackKind::Audio).unwrap()];
+    let seconds = a.samples.iter().map(|s| u64::from(s.duration)).sum::<u64>() as f64 / 48_000.0;
+    assert!((seconds - 100.0 / 24.0).abs() < 0.08, "audio is {seconds} s");
+}
+
+#[test]
+fn segmented_prores_is_byte_identical_to_encoding_frame_by_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let serial = dir.path().join("serial.mov");
+    let segmented = dir.path().join("segmented.mov");
+    let s = settings(Codec::ProRes4444 { alpha: true });
+    let frames = (0..20).map(|t| frame(t % 16, true));
+    encode_to_file(&serial, s.clone(), frames).unwrap();
+    encode_segmented(&segmented, &s, 20, 4);
+    assert_eq!(std::fs::read(serial).unwrap(), std::fs::read(segmented).unwrap());
+}
+
+#[test]
+fn segments_must_arrive_in_order_and_not_be_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = settings(Codec::H264 { rate: H264Rate::default() });
+    let mut job = start(dir.path().join("o.mp4"), s.clone()).unwrap();
+    let mut encoder = SegmentEncoder::new(&s, 1).unwrap();
+    assert!(matches!(encoder.push(&frame(0, true)), Err(VideoError::EncoderStopped)), "push before start");
+    encoder.start(5).unwrap();
+    assert!(matches!(encoder.finish(), Err(VideoError::NoFrames)));
+    encoder.start(5).unwrap();
+    encoder.push(&frame(0, true)).unwrap();
+    assert!(matches!(encoder.push(&Image::new(2, 2, vec![0; 16]).unwrap()), Err(VideoError::WrongFrameSize { .. })));
+    let late = encoder.finish().unwrap();
+    assert_eq!((late.first_frame(), late.frames()), (5, 1));
+    assert!(matches!(job.send_segment(late), Err(VideoError::InvalidFrame(_))), "the video has not reached frame 5");
+    job.cancel();
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
