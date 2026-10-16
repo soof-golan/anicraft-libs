@@ -6,14 +6,16 @@
 //! continued is closed with a straight line. Strokes are chained too, without orientation, so that joins and caps
 //! are drawn once per polyline instead of once per segment.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
+use std::hash::Hasher as _;
 
 use anim_core::kurbo::PathEl;
-use anim_core::num::round_f64_to_i64;
 use anim_core::{BezPath, Point};
+use rustc_hash::{FxHashMap, FxHasher};
 
 use crate::edges::{Edge, EdgeShape};
-use crate::segment::{Segment, TWIPS_PER_PX, fingerprint};
+use crate::segment::{Segment, TWIPS_PER_PX};
 use crate::styles::StrokeStyle;
 
 /// End points closer than this many twips are the same vertex.
@@ -155,33 +157,75 @@ fn split_continuous(segments: &[Segment]) -> Vec<Vec<Segment>> {
 /// file, or one boundary given both as `fill_style1` forward and `fill_style0` reversed) would otherwise become two
 /// coincident contours, and the even-odd fill would cancel them into a hole.
 fn drop_duplicates(pieces: Vec<Vec<Segment>>) -> Vec<Vec<Segment>> {
-    let mut by_print: HashMap<u64, Vec<usize>> = HashMap::new();
+    // The newest kept piece per hash, and for each kept piece the older one with the same hash.
+    let mut newest: FxHashMap<u64, usize> = FxHashMap::default();
+    let mut older: Vec<Option<usize>> = Vec::with_capacity(pieces.len());
     let mut kept: Vec<Vec<Segment>> = Vec::with_capacity(pieces.len());
     for piece in pieces {
-        let bucket = by_print.entry(fingerprint(&piece)).or_default();
-        if bucket.iter().any(|&at| kept.get(at) == Some(&piece)) {
+        let print = piece_hash(&piece);
+        let same = |&at: &usize| kept.get(at) == Some(&piece);
+        if std::iter::successors(newest.get(&print).copied(), |&at| older.get(at).copied().flatten()).any(|at| same(&at)) {
             continue;
         }
-        bucket.push(kept.len());
+        older.push(newest.insert(print, kept.len()));
         kept.push(piece);
     }
     kept
 }
 
+/// A hash of the exact coordinates of a piece.
+fn piece_hash(piece: &[Segment]) -> u64 {
+    let mut hasher = FxHasher::default();
+    hasher.write_usize(piece.len());
+    for segment in piece {
+        segment.visit_coords(|value: f64| hasher.write_u64(value.to_bits()));
+    }
+    hasher.finish()
+}
+
 /// A spatial hash over points with one-twip cells: everything within [`JOIN_EPS`] of a point is in the 3x3 cells
-/// around it.
+/// around it. Ids are dense and inserted in increasing order; the ids of one cell form a linked list (`next`), so a
+/// cell costs one map entry instead of a vector.
 #[derive(Default)]
 struct Grid {
-    cells: HashMap<(i64, i64), Vec<usize>>,
+    /// First and last id of each cell.
+    cells: FxHashMap<(i64, i64), (usize, usize)>,
+    /// The id after each id in its cell.
+    next: Vec<Option<usize>>,
+}
+
+/// `v.floor()` as an `i64` without the library call `floor` costs on baseline x86 (NaN is 0, out of range saturates).
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "float-to-int `as` saturates; the round trip is exact below 2^53 and only compared above"
+)]
+const fn floor_cell(v: f64) -> i64 {
+    let truncated = v as i64;
+    if (truncated as f64) > v { truncated.saturating_sub(1) } else { truncated }
 }
 
 impl Grid {
     const fn key(p: Point) -> (i64, i64) {
-        (round_f64_to_i64(p.x.floor()), round_f64_to_i64(p.y.floor()))
+        (floor_cell(p.x), floor_cell(p.y))
     }
 
     fn insert(&mut self, p: Point, id: usize) {
-        self.cells.entry(Self::key(p)).or_default().push(id);
+        if self.next.len() <= id {
+            self.next.resize(id.saturating_add(1), None);
+        }
+        match self.cells.entry(Self::key(p)) {
+            Entry::Occupied(mut cell) => {
+                if let Some(slot) = self.next.get_mut(cell.get().1) {
+                    *slot = Some(id);
+                }
+                cell.get_mut().1 = id;
+            }
+            Entry::Vacant(cell) => {
+                cell.insert((id, id));
+            }
+        }
     }
 
     /// Ids stored in the cells around `p` (a superset of those within [`JOIN_EPS`]).
@@ -190,8 +234,7 @@ impl Grid {
         (-1..=1_i64)
             .flat_map(move |dx| (-1..=1_i64).map(move |dy| (kx.saturating_add(dx), ky.saturating_add(dy))))
             .filter_map(|key| self.cells.get(&key))
-            .flatten()
-            .copied()
+            .flat_map(|&(first, _)| std::iter::successors(Some(first), |&id| self.next.get(id).copied().flatten()))
     }
 }
 

@@ -25,7 +25,8 @@ use std::path::Path;
 use anim_core::Point;
 use anim_core::kurbo::{PathEl, Shape};
 use anim_shape::{Edge, EdgeShape, FillStyle, NoImages, Segment, StrokeStyle, XflEdge, encode_edges, parse_edges};
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
 
 const CELLS: u32 = 100;
 /// Cell size in twips.
@@ -154,6 +155,19 @@ fn dummy_styles(edges: &[XflEdge]) -> (Vec<FillStyle>, Vec<StrokeStyle>) {
     (vec![FillStyle::default(); fills as usize], vec![StrokeStyle::default(); strokes as usize])
 }
 
+/// Times `work` with criterion. With `BENCH_FIXED=<runs> BENCH_ONLY=<name>` it instead runs the named work a fixed
+/// number of times, for `perf stat`, which counts cycles and instructions and so is steadier than wall time on a
+/// busy machine.
+fn run(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, mut work: impl FnMut()) {
+    if let Some(runs) = std::env::var("BENCH_FIXED").ok().and_then(|v| v.parse::<u32>().ok()) {
+        if std::env::var("BENCH_ONLY").is_ok_and(|only| name.contains(only.as_str())) {
+            (0..runs).for_each(|_| work());
+        }
+        return;
+    }
+    group.bench_function(name, |b| b.iter(&mut work));
+}
+
 fn shape_benches(c: &mut Criterion) {
     let grid = grid_shape();
     let segments: Vec<Segment> = grid.edges.iter().flat_map(|e| e.segments.iter().copied()).collect();
@@ -163,11 +177,13 @@ fn shape_benches(c: &mut Criterion) {
     }
     let mut group = c.benchmark_group("shape");
     group.sample_size(20);
-    group.bench_function("grid_encode", |b| b.iter(|| encode_edges(black_box(&segments))));
-    group.bench_function("grid_parse", |b| b.iter(|| parse_edges(black_box(&text)).unwrap()));
-    group.bench_function("grid_assemble", |b| b.iter(|| black_box(&grid).assemble()));
-    group.bench_function("grid_to_display", |b| b.iter(|| black_box(&grid).to_display(&NoImages)));
-    group.bench_function("grid_bounds_hit", |b| b.iter(|| (black_box(&grid).bounds(), grid.hit_test(Point::new(10_050.0 / 20.0, 9_950.0 / 20.0), 3.0))));
+    run(&mut group, "grid_encode", || drop(black_box(encode_edges(black_box(&segments)))));
+    run(&mut group, "grid_parse", || drop(black_box(parse_edges(black_box(&text)).unwrap())));
+    run(&mut group, "grid_assemble", || drop(black_box(black_box(&grid).assemble())));
+    run(&mut group, "grid_to_display", || drop(black_box(black_box(&grid).to_display(&NoImages))));
+    run(&mut group, "grid_bounds_hit", || {
+        black_box((black_box(&grid).bounds(), grid.hit_test(Point::new(10_050.0 / 20.0, 9_950.0 / 20.0), 3.0)));
+    });
 
     let samples = sample_shapes();
     if !samples.is_empty() {
@@ -181,20 +197,16 @@ fn shape_benches(c: &mut Criterion) {
         if std::env::var_os("BENCH_CHECKSUM").is_some() {
             eprintln!("checksum samples {:016x}", built.iter().fold(0_u64, |h, s| h ^ nodes_checksum(s)));
         }
-        group.bench_function("samples_from_xfl", |b| {
-            b.iter(|| {
-                for edges in &samples {
-                    let (fills, strokes) = dummy_styles(edges);
-                    black_box(EdgeShape::from_xfl_lenient(fills, strokes, edges));
-                }
-            });
+        run(&mut group, "samples_from_xfl", || {
+            for edges in &samples {
+                let (fills, strokes) = dummy_styles(edges);
+                black_box(EdgeShape::from_xfl_lenient(fills, strokes, edges));
+            }
         });
-        group.bench_function("samples_to_display", |b| {
-            b.iter(|| {
-                for shape in &built {
-                    black_box(shape.to_display(&NoImages));
-                }
-            });
+        run(&mut group, "samples_to_display", || {
+            for shape in &built {
+                black_box(shape.to_display(&NoImages));
+            }
         });
     }
     group.finish();

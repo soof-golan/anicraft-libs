@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 anim-core = { workspace = true }
 anim-display = { workspace = true }
+rustc-hash = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 

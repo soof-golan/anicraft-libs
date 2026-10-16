@@ -57,6 +57,8 @@ serde_json = "1"
 postcard = { version = "1", features = ["alloc"] }
 thiserror = "2"
 rayon = "1.11"
+# Fast non-cryptographic hasher for the integer-keyed lookups in hot loops (std's SipHash costs more than the work).
+rustc-hash = "2"
 crossbeam-channel = "0.5"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 parley = "0.11"

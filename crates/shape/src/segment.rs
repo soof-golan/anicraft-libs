@@ -110,7 +110,8 @@ impl Segment {
         }
     }
 
-    fn visit_coords(&self, mut f: impl FnMut(f64)) {
+    /// Feeds the variant tag and every coordinate to `f`, in a fixed order.
+    pub(crate) fn visit_coords(&self, mut f: impl FnMut(f64)) {
         let (tag, points): (u8, [Option<Point>; 4]) = match *self {
             Self::Line { from, to } => (1, [Some(from), Some(to), None, None]),
             Self::Quad { from, ctrl, to } => (2, [Some(from), Some(ctrl), Some(to), None]),
