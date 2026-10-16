@@ -1,6 +1,8 @@
 //! Shared scene builders for the export tests.
 #![allow(dead_code, reason = "each test binary uses a different subset")]
 
+pub mod vis;
+
 use anim_core::{Affine, BezPath, BlendMode, ColorTransform, Point, Rgba8, Size};
 use anim_display::{
     Bitmap, Cap, DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Join, Mesh, Node, Paint, Spread, Stroke,
