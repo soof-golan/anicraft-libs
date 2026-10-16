@@ -49,6 +49,30 @@ own rules. CI enforces most of them.
   and golden tests for rendering (small PNGs, compared with a tolerance).
 - Run builds through the queue (see below) in the dev profile. Use release only for benchmarks.
 
+## Visual verification: predict, render, inspect
+
+Passing tests is not enough for anything that draws, deforms or lays out. Every component that produces pixels or
+geometry (shapes, rendering, text, timeline, morphs, export, video, file readers, puppets, behaviours) goes through
+this loop before its work counts as done:
+
+1. **Design hard synthetic inputs.** Write small files or models by hand in `tests/fixtures/visual/`, each aimed at
+   one way the component could go wrong. Examples: self-intersecting and even-odd fills, zero-length segments, hairline
+   and huge strokes, joins at near-180° angles, gradients with stops out of order, nested symbols with
+   scale/skew/rotation, masks inside masks, alpha and colour transforms that combine, mixed RTL/LTR text with
+   numbers and line breaks inside a run, tweens across rotation wrap-around, puppets with heads, limbs and draggers
+   pushed to extremes. Every fixture is original and synthetic; never derive one from the Adobe samples.
+2. **Write the prediction first.** Before rendering, write down in `tests/fixtures/visual/<name>.expect.md` what the
+   output must look like: specific pixel colours at named coordinates, which regions are filled and which are holes,
+   where edges fall (to the pixel), text order and caret positions, what stays connected. Derive it from the format's
+   rules, not from the current output.
+3. **Render and inspect closely.** Render to PNG under `/mnt/data/anim/scratch/visual/<crate>/`. Open every image with
+   the Read tool and compare it to the prediction region by region, zooming in with crops of the detailed areas
+   (edges, joins, neck/attach points, glyph clusters). Write the verdict for each point in the `.expect.md`.
+4. **Fix the code.** When the render disagrees with a correct prediction, fix the code. Do not edit the prediction to
+   match the output. If the prediction was wrong, explain why in the `.expect.md` before changing it.
+5. **Lock it in.** Turn the checked points into assertions (pixel probes with a tolerance, geometry checks), and keep
+   the PNG as a golden for that fixture. Copy one representative image per crate to `/mnt/data/anim/scratch/screenshots/`.
+
 ## Building: always through the job queue
 
 Never run `cargo` directly for builds, checks, clippy or tests. Use the queue so parallel agents share the machine:
