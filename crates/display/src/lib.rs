@@ -38,6 +38,12 @@ pub enum Node {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Group {
     pub transform: Affine,
+    /// A perspective projection of the group's plane (an instance rotated or moved in 3D): applied after
+    /// `transform`, it maps the group's content into the parent's space. `None` is the ordinary affine group.
+    /// Renderers draw the content flat and warp it; exporters without perspective use
+    /// [`Homography::affine_at`](anim_core::Homography::affine_at) at the content's centre.
+    #[serde(default)]
+    pub projection: Option<anim_core::Homography>,
     pub color: ColorTransform,
     pub blend: BlendMode,
     /// Children are drawn only where the mask's alpha is non-zero (Animate mask layers, puppet clipping).

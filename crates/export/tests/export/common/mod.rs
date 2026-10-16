@@ -116,6 +116,7 @@ pub fn kitchen_sink() -> (DisplayList, ImageStore) {
         ],
         children: vec![solid_rect(0.0, 0.0, 80.0, 40.0, GREEN)],
         key: Some(7),
+        projection: None,
     }));
     // Alpha-only group.
     list.nodes.push(Node::Group(Group {

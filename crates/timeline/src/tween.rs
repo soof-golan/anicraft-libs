@@ -1,6 +1,6 @@
 //! Classic (motion) tweens: pairing of elements between two keyframes and interpolation of their properties.
 
-use anim_core::{Affine, ColorTransform};
+use anim_core::{Affine, ColorTransform, Matrix3D};
 use anim_display::Filter;
 use anim_morph::style::lerp_color;
 use anim_scene::{EaseTarget, Element, Frame, InstanceFilter, SymbolInstance};
@@ -14,6 +14,8 @@ use crate::xform::{self, Progress, TweenParams, lerp};
 pub struct Placed<'a> {
     pub element: &'a Element,
     pub matrix: Affine,
+    /// Symbol instances only: the 3D placement that replaces `matrix` when the instance is drawn.
+    pub matrix_3d: Option<Matrix3D>,
     /// Symbol instances only.
     pub color: ColorTransform,
     /// Symbol instances only.
@@ -25,7 +27,8 @@ impl<'a> Placed<'a> {
     #[must_use]
     pub fn hold(element: &'a Element) -> Self {
         let (color, filters) = element.as_symbol_instance().map_or((ColorTransform::IDENTITY, Vec::new()), |i| (i.color, mapped_filters(i)));
-        Self { element, matrix: element.matrix().unwrap_or(Affine::IDENTITY), color, filters }
+        let matrix_3d = element.as_symbol_instance().and_then(|i| i.matrix_3d);
+        Self { element, matrix: element.matrix().unwrap_or(Affine::IDENTITY), matrix_3d, color, filters }
     }
 }
 
@@ -74,6 +77,12 @@ pub fn classic_along<'a>(start: &'a Frame, end: &'a Frame, t: f64, guide: Option
             if let (Element::SymbolInstance(a), Element::SymbolInstance(b)) = (from, to) {
                 placed.color = a.color.lerp(&b.color, color_f32(color_p));
                 placed.filters = lerp_filters(&mapped_filters(a), &mapped_filters(b), filter_p);
+                if a.matrix_3d.is_some() || b.matrix_3d.is_some() {
+                    // 3D tweens interpolate position, rotation and scale per axis; the 2D result above is replaced.
+                    let m3 = a.placement_3d().lerp(&b.placement_3d(), progress.position);
+                    placed.matrix = m3.plane_affine();
+                    placed.matrix_3d = Some(m3);
+                }
             }
             placed
         })

@@ -467,6 +467,7 @@ fn random_node(rng: &mut Lcg, depth: usize, image: ImageId) -> Node {
                 filters: if rng.next_u32() % 3 == 0 { vec![random_filter(rng)] } else { Vec::new() },
                 children: (0..(rng.next_u32() % 3)).map(|_| random_node(rng, depth + 1, image)).collect(),
                 key: None,
+                projection: None,
             })
         }
         _ => {

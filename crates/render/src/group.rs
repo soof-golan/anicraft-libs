@@ -19,12 +19,16 @@ use crate::composite::{self, Composite};
 use crate::draw::{self, Ctx, bump};
 use crate::pool::Layer;
 use crate::px::PxRect;
-use crate::{bounds, filters};
+use crate::{bounds, filters, project};
 
 /// Draws `group` (whose parent maps to device space with `matrix`) onto `layer`.
 pub fn draw(cx: &mut Ctx<'_>, layer: &mut Layer, group: &Group, matrix: Affine, depth: usize) {
     if depth >= bounds::MAX_DEPTH {
         bump(&mut cx.stats.invalid);
+        return;
+    }
+    if let Some(projection) = &group.projection {
+        project::draw(cx, layer, group, projection, matrix, depth);
         return;
     }
     let inner = matrix * group.transform;
@@ -51,7 +55,15 @@ pub fn draw(cx: &mut Ctx<'_>, layer: &mut Layer, group: &Group, matrix: Affine, 
         return;
     };
     bump(&mut cx.stats.isolated_groups);
-    draw::nodes(cx, &mut offscreen, &group.children, inner, next);
+    finish_offscreen(cx, &mut offscreen, group, inner, wanted, next);
+    composite::composite(layer, &offscreen, Composite::of(group.blend));
+    cx.pool.recycle(offscreen);
+}
+
+/// Steps 1 to 4 on a layer that is already allocated: children, mask, filters and colour transform, all under
+/// `inner` (the matrix from the group's local space to the layer's device space).
+pub fn finish_offscreen(cx: &mut Ctx<'_>, offscreen: &mut Layer, group: &Group, inner: Affine, wanted: PxRect, next: usize) {
+    draw::nodes(cx, offscreen, &group.children, inner, next);
     if let Some(mask_nodes) = &group.mask {
         if let Some(mut mask_layer) = cx.pool.take(wanted) {
             draw::nodes(cx, &mut mask_layer, mask_nodes, inner, next);
@@ -63,13 +75,11 @@ pub fn draw(cx: &mut Ctx<'_>, layer: &mut Layer, group: &Group, matrix: Affine, 
         }
     }
     for filter in &group.filters {
-        if !filters::apply(&mut offscreen, filter, inner) {
+        if !filters::apply(offscreen, filter, inner) {
             bump(&mut cx.stats.degraded_groups);
         }
     }
-    composite::apply_color_transform(&mut offscreen, &group.color);
-    composite::composite(layer, &offscreen, Composite::of(group.blend));
-    cx.pool.recycle(offscreen);
+    composite::apply_color_transform(offscreen, &group.color);
 }
 
 /// The device rectangle the group's offscreen layer must cover: its content (clipped by the mask) grown by what

@@ -56,6 +56,9 @@ pub fn group(group: &Group, matrix: Affine, images: &ImageStore, depth: usize) -
     if depth >= MAX_DEPTH {
         return None;
     }
+    if let Some(projection) = &group.projection {
+        return projected_group(group, projection, matrix, images, depth);
+    }
     let inner = matrix * group.transform;
     let mut rect = nodes(&group.children, inner, images, depth.saturating_add(1))?;
     if let Some(mask) = &group.mask {
@@ -63,6 +66,19 @@ pub fn group(group: &Group, matrix: Affine, images: &ImageStore, depth: usize) -
     }
     let pad = f64::from(filters::total_reach(&group.filters, inner));
     Some(rect.inflate(pad, pad))
+}
+
+/// Bounds of a group under a perspective projection: the content's rectangle in the plane, grown by the filters'
+/// reach, projected with the part behind the viewer clipped away.
+fn projected_group(group: &Group, projection: &anim_core::Homography, matrix: Affine, images: &ImageStore, depth: usize) -> Option<Rect> {
+    let mut content = nodes(&group.children, group.transform, images, depth.saturating_add(1))?;
+    if let Some(mask) = &group.mask {
+        content = intersect(content, nodes(mask, group.transform, images, depth.saturating_add(1))?)?;
+    }
+    let pad = f64::from(filters::total_reach(&group.filters, Affine::IDENTITY));
+    let content = content.inflate(pad, pad);
+    let quad = [Point::new(content.x0, content.y0), Point::new(content.x1, content.y0), Point::new(content.x1, content.y1), Point::new(content.x0, content.y1)];
+    crate::project::projected_bounds(&projection.before_affine(matrix), quad).and_then(finite)
 }
 
 /// Bounds of the deformed triangles of a mesh.

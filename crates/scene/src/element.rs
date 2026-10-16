@@ -3,7 +3,7 @@
 //! Flash matrices are `a b c d tx ty` with `tx`/`ty` in pixels, which is exactly `kurbo::Affine::new([a, b, c, d,
 //! tx, ty])`. All geometry here is in pixels, y down.
 
-use anim_core::{Affine, BlendMode, ColorTransform, Point, Rgba8};
+use anim_core::{Affine, BlendMode, ColorTransform, Matrix3D, Point, Rgba8};
 use anim_shape::EdgeShape;
 use serde::{Deserialize, Serialize};
 
@@ -168,6 +168,12 @@ pub struct SymbolInstance {
     /// Last frame for play-once graphics (`lastFrame`).
     pub last_frame: Option<u32>,
     pub matrix: Affine,
+    /// The instance's 3D placement (`<matrix3D>`), set by the 3D Rotation and 3D Translation tools. When present it
+    /// replaces `matrix` for drawing; `matrix` keeps its flattened z = 0 plane so 2D tools still see a position.
+    pub matrix_3d: Option<Matrix3D>,
+    /// The point the 3D tools rotate about, in the instance's parent space (`centerPoint3DX`, `centerPoint3DY`).
+    /// `None` is the instance's own origin.
+    pub center_point_3d: Option<Point>,
     /// Registration/transformation point in the symbol's own space.
     pub transformation_point: Point,
     /// Colour transform applied to the instance.
@@ -195,6 +201,8 @@ impl SymbolInstance {
             first_frame: 0,
             last_frame: None,
             matrix,
+            matrix_3d: None,
+            center_point_3d: None,
             transformation_point: Point::ORIGIN,
             color: ColorTransform::IDENTITY,
             color_effect: ColorEffect::None,
@@ -204,6 +212,33 @@ impl SymbolInstance {
             visible: true,
             name: None,
             extra: Extra::new(),
+        }
+    }
+
+    /// Gives the instance a 3D placement, keeping `matrix` as its flattened plane. A planar matrix (no depth) drops
+    /// the 3D placement again, as Animate does when the last 3D property is reset.
+    pub fn set_matrix_3d(&mut self, matrix_3d: Matrix3D) {
+        self.matrix = matrix_3d.plane_affine();
+        self.matrix_3d = (!matrix_3d.is_planar()).then_some(matrix_3d);
+    }
+
+    /// The matrix the instance is drawn with: its 3D matrix, or `matrix` embedded in the z = 0 plane.
+    #[must_use]
+    pub fn placement_3d(&self) -> Matrix3D {
+        self.matrix_3d.unwrap_or_else(|| Matrix3D::from_affine(self.matrix))
+    }
+
+    /// Replaces the 2D matrix. A 3D instance moves by the change, applied in its parent's plane after its 3D placement.
+    pub fn set_matrix_2d(&mut self, matrix: Affine) {
+        if let Some(m3) = self.matrix_3d
+            && self.matrix.determinant().abs() > 1.0e-12
+        {
+            let delta = matrix * self.matrix.inverse();
+            self.matrix_3d = Some(m3.then(&Matrix3D::from_affine(delta)));
+            self.matrix = matrix;
+        } else {
+            self.matrix = matrix;
+            self.matrix_3d = None;
         }
     }
 
@@ -459,7 +494,7 @@ impl Element {
     pub fn set_matrix(&mut self, matrix: Affine) -> bool {
         match self {
             Self::Shape(s) => s.matrix = matrix,
-            Self::SymbolInstance(s) => s.matrix = matrix,
+            Self::SymbolInstance(s) => s.set_matrix_2d(matrix),
             Self::Bitmap(b) => b.matrix = matrix,
             Self::Text(t) => t.matrix = matrix,
             Self::Group(g) => g.matrix = matrix,

@@ -309,6 +309,19 @@ impl Homography {
         (q.x.is_finite() && q.y.is_finite()).then_some(q)
     }
 
+    /// The image of `p` whatever the sign of the weight: for evaluating an inverse map, where the weight's sign has
+    /// no meaning. `None` when the weight is zero or the result is not finite.
+    #[must_use]
+    pub fn apply_unchecked(&self, p: Point) -> Option<Point> {
+        let [a, b, c, d, e, f, ..] = self.0;
+        let w = self.weight(p);
+        if w.abs() <= MIN_W {
+            return None;
+        }
+        let q = Point::new((a * p.x + b * p.y + c) / w, (d * p.x + e * p.y + f) / w);
+        (q.x.is_finite() && q.y.is_finite()).then_some(q)
+    }
+
     /// `self` after `rhs` (`rhs` is applied first).
     #[must_use]
     pub fn compose(&self, rhs: &Self) -> Self {

@@ -19,6 +19,8 @@
 //!   matrix.
 //! - **Bitmaps** with smoothing on or off, and **meshes**: content rendered once into a texture and drawn through
 //!   per-triangle affine maps.
+//! - **Perspective groups** ([`anim_display::Group::projection`], 3D instances): drawn flat and warped by per-pixel
+//!   inverse mapping; see the `project` module for the accuracy it guarantees.
 //!
 //! The output depends only on the inputs: parallel work (blur rows, colour transforms) is split into independent
 //! units, and nothing reads a clock or a random source. tiny-skia's SIMD paths can differ in the last bit between
@@ -47,6 +49,7 @@ mod pick;
 mod pixel;
 mod pixels;
 mod pool;
+mod project;
 mod px;
 mod renderer;
 mod stats;
@@ -57,5 +60,5 @@ pub use error::RenderError;
 pub use options::{Background, RenderOptions};
 pub use pick::{Hit, pick, pick_all};
 pub use pixels::{image_from_straight_rgba, straight_rgba};
-pub use renderer::{MAX_DIMENSION, MAX_PIXELS, Renderer, content_bounds, render};
+pub use renderer::{MAX_DIMENSION, MAX_PIXELS, Renderer, content_bounds, nodes_bounds, render};
 pub use stats::RenderStats;

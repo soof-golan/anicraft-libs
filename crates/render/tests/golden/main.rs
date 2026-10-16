@@ -30,6 +30,7 @@ mod groups;
 mod mesh;
 mod paints;
 mod perf;
+mod perspective;
 mod robustness;
 mod shapes;
 mod showcase;

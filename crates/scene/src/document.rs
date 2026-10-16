@@ -1,6 +1,7 @@
 //! The document: stage settings, scenes and the library.
 
-use anim_core::{FrameRate, Rgba8, Tick};
+use anim_core::projective::DEFAULT_PERSPECTIVE_ANGLE;
+use anim_core::{FrameRate, Perspective, Point, Rgba8, Tick};
 use serde::{Deserialize, Serialize};
 
 use crate::element::SymbolKind;
@@ -39,6 +40,10 @@ pub struct Document {
     /// Frames per second as stored (`frameRate`, may be fractional such as 29.97).
     pub frame_rate: f64,
     pub background_color: Rgba8,
+    /// Perspective angle (field of view) in degrees for 3D instances, 1 ..= 179; Animate's default is 55.
+    pub perspective_angle: f64,
+    /// The vanishing point of 3D instances in stage pixels; `None` is the centre of the stage.
+    pub vanishing_point: Option<Point>,
     /// Index into `scenes` of the timeline that was open when the file was saved (XFL stores it 1-based; this is
     /// 0-based).
     pub current_timeline: usize,
@@ -72,12 +77,25 @@ impl Document {
             height,
             frame_rate,
             background_color: Rgba8::WHITE,
+            perspective_angle: DEFAULT_PERSPECTIVE_ANGLE,
+            vanishing_point: None,
             current_timeline: 0,
             scenes: vec![scene],
             library: Library::new(),
             publish_settings_xml: None,
             extra: Extra::new(),
         }
+    }
+
+    /// The view 3D instances are projected with: the document's perspective angle and vanishing point over the stage.
+    #[must_use]
+    pub fn perspective(&self) -> Perspective {
+        let mut perspective = Perspective::for_stage(self.width, self.height);
+        perspective.angle = self.perspective_angle;
+        if let Some(point) = self.vanishing_point {
+            perspective.vanishing_point = point;
+        }
+        perspective
     }
 
     /// The frame rate as an exact rational ([`FrameRate::from_f64`]), falling back to 12 fps (Animate's classic

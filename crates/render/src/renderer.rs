@@ -33,6 +33,12 @@ pub fn content_bounds(list: &DisplayList, images: &ImageStore, view: Affine) -> 
     bounds::nodes(&list.nodes, view, images, 0)
 }
 
+/// [`content_bounds`] of a sibling list of nodes (the children of one group).
+#[must_use]
+pub fn nodes_bounds(nodes: &[Node], images: &ImageStore, view: Affine) -> Option<Rect> {
+    bounds::nodes(nodes, view, images, 0)
+}
+
 /// A rasteriser that keeps its scratch buffers between renders. Not `Sync`-shared: give each worker thread its
 /// own, or keep one inside an actor.
 #[derive(Debug, Default)]

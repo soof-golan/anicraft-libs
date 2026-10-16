@@ -91,7 +91,18 @@ impl Walk<'_> {
         if depth >= MAX_DEPTH || invisible(group) {
             return false;
         }
-        let inner = matrix * group.transform;
+        // Under a projection the point is carried back into the group's plane and the children are tested there.
+        let (inner, point) = match &group.projection {
+            Some(projection) => {
+                let full = projection.before_affine(matrix);
+                let Some(plane_point) = full.inverse().and_then(|inverse| inverse.apply_unchecked(point)) else { return false };
+                if full.weight(plane_point) <= anim_core::projective::MIN_W {
+                    return false;
+                }
+                (group.transform, plane_point)
+            }
+            None => (matrix * group.transform, point),
+        };
         if let Some(mask) = &group.mask {
             let mut probe = Walk { images: self.images, hits: Vec::new(), path: Vec::new(), keys: Vec::new() };
             probe.nodes(mask, inner, point, depth.saturating_add(1), false);

@@ -474,8 +474,14 @@ impl<'a> Evaluator<'a> {
                     return None;
                 }
                 let children = self.symbol_nodes(instance, since, time, state);
+                // A 3D instance is drawn flat and projected: its 3D matrix carries the whole placement.
+                let (transform, projection) = match placed.matrix_3d {
+                    Some(m3) => (Affine::IDENTITY, Some(m3.homography(&self.doc.perspective()))),
+                    None => (placed.matrix, None),
+                };
                 Some(Node::Group(Group {
-                    transform: placed.matrix,
+                    transform,
+                    projection,
                     color: placed.color,
                     blend: instance.blend_mode,
                     filters: placed.filters,
