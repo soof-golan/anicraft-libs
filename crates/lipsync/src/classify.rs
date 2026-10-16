@@ -4,7 +4,7 @@ use crate::features::Features;
 use crate::viseme::Viseme;
 
 /// Voicing score at or above which a frame counts as voiced.
-const VOICED: f32 = 0.45;
+pub const VOICED: f32 = 0.45;
 /// High-band share at or above which noise is a sibilant (S) rather than a softer fricative (F).
 const SIBILANT_SHARE: f32 = 0.55;
 /// High-band share at which a voiced frame still counts as a fricative (Z, V).

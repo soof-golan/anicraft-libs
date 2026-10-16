@@ -4,7 +4,7 @@
 use anim_core::Tick;
 use serde::{Deserialize, Serialize};
 
-use crate::classify::{Context, classify};
+use crate::classify::{Context, VOICED, classify};
 use crate::features::{FrameAnalyzer, MIN_DB};
 use crate::num::{u32_f32, u64_i64, usize_i64};
 use crate::viseme::Viseme;
@@ -172,6 +172,8 @@ pub struct Pipeline {
     frame: u64,
     prev_energy: f32,
     prev_silent: bool,
+    /// The frame of a burst waiting for the next frame's voicing.
+    pending_burst: Option<u64>,
 }
 
 impl Pipeline {
@@ -193,6 +195,7 @@ impl Pipeline {
             frame: 0,
             prev_energy: MIN_DB,
             prev_silent: true,
+            pending_burst: None,
         }
     }
 
@@ -235,18 +238,31 @@ impl Pipeline {
             if self.buffer.len() < self.win {
                 continue;
             }
-            let raw = self.analyze_frame();
-            if let Some((start, viseme)) = self.smoother.update(self.frame, raw, &self.cfg) {
-                out.push(VisemeKey { start: self.frame_start(start), viseme });
+            let (raw, voiced) = self.analyze_frame();
+            let burst = self.pending_burst.take();
+            let mut changes = Vec::new();
+            // A burst is judged one frame late: the first window of a vowel that starts abruptly is also an
+            // unvoiced rise out of silence, and the next frame, now mostly vowel, tells the two apart.
+            if let Some(at) = burst.filter(|_| !voiced) {
+                changes.extend(self.smoother.update(at, Viseme::D, &self.cfg));
             }
+            let raw = if raw == Viseme::D {
+                self.pending_burst = Some(self.frame);
+                Viseme::Neutral
+            } else {
+                raw
+            };
+            changes.extend(self.smoother.update(self.frame, raw, &self.cfg));
+            out.extend(changes.into_iter().map(|(start, viseme)| VisemeKey { start: self.frame_start(start), viseme }));
             self.frame = self.frame.saturating_add(1);
             self.buffer.drain(..self.hop.min(self.buffer.len()));
         }
         out
     }
 
-    fn analyze_frame(&mut self) -> Viseme {
-        let Some(frame) = self.buffer.get(..self.win) else { return Viseme::Neutral };
+    /// The frame's raw label and whether it sounds voiced.
+    fn analyze_frame(&mut self) -> (Viseme, bool) {
+        let Some(frame) = self.buffer.get(..self.win) else { return (Viseme::Neutral, false) };
         let energy = FrameAnalyzer::energy_db(frame);
         let threshold = self.vad.update(energy, &self.cfg);
         let silent = energy < threshold;
@@ -254,10 +270,10 @@ impl Pipeline {
         self.prev_energy = energy;
         self.prev_silent = silent;
         if silent {
-            return Viseme::Neutral;
+            return (Viseme::Neutral, false);
         }
         let features = self.analyzer.features(frame, energy);
         let ctx = Context { current: self.smoother.current, peak_db: self.vad.peak, onset };
-        classify(&features, ctx)
+        (classify(&features, ctx), features.voicing >= VOICED)
     }
 }
