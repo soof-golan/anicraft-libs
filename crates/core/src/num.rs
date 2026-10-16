@@ -116,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::float_cmp, reason = "compares against the library rounding")]
+    #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss, reason = "compares against the library rounding")]
     fn unit_to_byte_matches_library_rounding_on_every_nearby_float() {
         // Every float within a few ulps of each half-way point and each whole byte, plus a sweep of the range.
         let mut values: Vec<f32> = (0..=255_u16).map(|b| f32::from(b) / 255.0).collect();
