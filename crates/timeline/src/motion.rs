@@ -99,12 +99,6 @@ impl MotionTracks {
         }
         out
     }
-
-    /// True when no track was read.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.tracks.is_empty()
-    }
 }
 
 impl MotionDelta {
