@@ -23,6 +23,7 @@ anim-morph = { path = "crates/morph" }
 anim-render = { path = "crates/render" }
 anim-rig = { path = "crates/rig" }
 anim-scene = { path = "crates/scene" }
+anim-script = { path = "crates/script" }
 anim-session = { path = "crates/session" }
 anim-shape = { path = "crates/shape" }
 anim-text = { path = "crates/text" }
