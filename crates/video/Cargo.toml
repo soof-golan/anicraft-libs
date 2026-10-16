@@ -20,7 +20,12 @@ filmcraft-isobmff = { workspace = true }
 filmcraft-prores = { workspace = true }
 thiserror = { workspace = true }
 
+[[bench]]
+name = "video"
+harness = false
+
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false }
 filmcraft-h264 = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }

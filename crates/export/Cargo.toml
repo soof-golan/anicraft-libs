@@ -17,11 +17,17 @@ anim-render = { workspace = true }
 base64 = { workspace = true }
 gif = { workspace = true }
 png = { workspace = true }
+rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
+[[bench]]
+name = "export"
+harness = false
+
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false }
 proptest = { workspace = true }
 roxmltree = { workspace = true }
 tempfile = { workspace = true }
