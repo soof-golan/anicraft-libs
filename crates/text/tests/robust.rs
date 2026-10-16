@@ -249,7 +249,8 @@ fn marks_and_joiners_after_a_line_break_do_not_derail_shaping() {
 /// the layout reports is snapped back to a character boundary.
 #[test]
 fn offsets_stay_on_character_boundaries_when_parley_splits_a_cluster() {
-    let Some(mut engine) = common::engine_for(&[anim_text::Script::Hebrew, anim_text::Script::Han]) else { return };
+    // The Han characters get the last-resort glyph with the bundled fonts, which is as good a cluster for this test.
+    let Some(mut engine) = common::engine_for(&[anim_text::Script::Hebrew]) else { return };
     let run = |text: &str, letter_spacing: f64| Run { text: text.into(), letter_spacing, ..Run::default() };
     let text = RichText::new(vec![Paragraph {
         direction: Direction::Ltr,
@@ -307,6 +308,25 @@ fn enormous_inputs_are_truncated_not_fatal() {
     assert!(layout.is_truncated());
     assert_eq!(layout.text(), "kept");
     assert!(layout.caret_rect(layout.caret_at(0), 1.0).is_some());
+}
+
+/// Found when the tests moved from system fonts to the bundled one: for a text with no cluster at the offset, the word
+/// range was the offset itself, past the end of the text.
+#[test]
+fn word_ranges_stay_inside_the_text_for_glyphless_and_far_offsets() {
+    let Some(mut engine) = engine() else { return };
+    // The second engine has no font at all, so no text has glyphs.
+    let mut fontless = anim_text::TextEngine::without_system_fonts();
+    for text in ["\u{feff}", "\u{200b}", "\n", "a\u{feff}", "abc"] {
+        for engine in [&mut engine, &mut fontless] {
+            let layout = engine.layout(&RichText::plain(text), None);
+            let len = layout.text().len();
+            for offset in 0..12 {
+                let word = layout.word_range_at(offset);
+                assert!(word.start <= word.end && word.end <= len, "{text:?} at {offset}: {word:?} (len {len})");
+            }
+        }
+    }
 }
 
 #[test]

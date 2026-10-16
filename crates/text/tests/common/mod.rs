@@ -1,8 +1,12 @@
 //! Shared helpers for the integration tests.
 //!
-//! Tests need fonts, and the machine may have none (CI images, minimal containers): every test that depends on a
-//! script first asks [`engine_for`], which returns `None` (and the test returns early, passing) when no installed font
-//! covers the script.
+//! Shaping must not depend on the machine's fonts (Windows, macOS and Linux pick different fallbacks), so [`engine`]
+//! and [`engine_for`] give an engine without system fonts and with only the bundled OFL test fonts (a regular file with
+//! Latin, Hebrew and Arabic, merged from subsets of Noto Sans, Noto Sans Hebrew and Noto Sans Arabic, and a Latin bold:
+//! `tests/fonts`, see `ATTRIBUTION.md`). One regular file, like most system fonts, so runs never split at a font
+//! change. Tests about the machine's own
+//! fonts (discovery, other scripts such as Han) ask [`system_engine`] or [`system_engine_for`] instead, which return
+//! `None` (and the test returns early, passing) when no installed font fits.
 #![allow(dead_code, reason = "each test file uses a different subset")]
 
 use std::ops::Range;
@@ -13,8 +17,34 @@ use anim_text::{Alignment, Direction, Paragraph, RichText, Run, Script, TextEngi
 pub const HEBREW: &str = "שלום עולם";
 pub const ARABIC: &str = "مرحبا بالعالم";
 
-/// An engine with system fonts, or `None` when there is no font at all.
+/// The bundled test fonts: regular (Latin, Hebrew, Arabic with the lam-alef ligature) and a Latin bold weight.
+const FONTS: [&[u8]; 2] = [include_bytes!("../fonts/AnicraftTestSans-Regular.ttf"), include_bytes!("../fonts/AnicraftTestSans-Bold.ttf")];
+
+/// An engine that knows only the bundled test fonts (the first stands in for the generic sans serif): the same on
+/// every machine.
+#[allow(clippy::unnecessary_wraps, reason = "always Some, but tests call it like `system_engine`, which can be None")]
 pub fn engine() -> Option<TextEngine> {
+    let mut engine = TextEngine::without_system_fonts();
+    for font in FONTS {
+        assert!(!engine.register_font(font.to_vec()).is_empty(), "a bundled test font failed to load");
+    }
+    Some(engine)
+}
+
+/// The bundled engine if it covers every script in `scripts`, or `None` (with a note) when one is missing.
+pub fn engine_for(scripts: &[Script]) -> Option<TextEngine> {
+    let mut engine = engine()?;
+    for script in scripts {
+        if !engine.covers_script(*script) {
+            eprintln!("skipping: the bundled test fonts do not cover {script:?}");
+            return None;
+        }
+    }
+    Some(engine)
+}
+
+/// An engine with the machine's fonts, or `None` when there is no font at all.
+pub fn system_engine() -> Option<TextEngine> {
     let mut engine = TextEngine::new();
     if engine.families().is_empty() {
         eprintln!("skipping: no fonts installed");
@@ -23,9 +53,9 @@ pub fn engine() -> Option<TextEngine> {
     Some(engine)
 }
 
-/// An engine that can draw every script in `scripts`, or `None` (with a note) when one is missing.
-pub fn engine_for(scripts: &[Script]) -> Option<TextEngine> {
-    let mut engine = engine()?;
+/// A system engine that can draw every script in `scripts`, or `None` (with a note) when one is missing.
+pub fn system_engine_for(scripts: &[Script]) -> Option<TextEngine> {
+    let mut engine = system_engine()?;
     for script in scripts {
         if !engine.covers_script(*script) {
             eprintln!("skipping: no installed font covers {script:?}");
@@ -54,19 +84,6 @@ pub fn visual_runs(layout: &TextLayout) -> Vec<(Range<usize>, bool)> {
     let mut runs: Vec<_> = layout.runs.iter().collect();
     runs.sort_by(|a, b| a.origin.x.total_cmp(&b.origin.x));
     runs.into_iter().map(|r| (r.range.clone(), r.rtl)).collect()
-}
-
-/// Like [`visual_runs`], but neighbouring runs of one direction that touch in the text are merged: a system may split a
-/// run where its font fallback changes (for example at a space), which says nothing about bidi order.
-pub fn visual_spans(layout: &TextLayout) -> Vec<(Range<usize>, bool)> {
-    let mut out: Vec<(Range<usize>, bool)> = Vec::new();
-    for (range, rtl) in visual_runs(layout) {
-        match out.last_mut() {
-            Some((prev, prev_rtl)) if *prev_rtl == rtl && !rtl && prev.end == range.start => prev.end = range.end,
-            _ => out.push((range, rtl)),
-        }
-    }
-    out
 }
 
 /// Every character boundary of the layout's text, including 0 and the length.

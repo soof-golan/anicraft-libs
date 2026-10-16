@@ -25,4 +25,5 @@ skrifa = { workspace = true }
 anim-render = { workspace = true }
 png = { workspace = true }
 proptest = { workspace = true }
-serde_json = { workspace = true }
+# `float_roundtrip`: glyph outlines are f64 values that must survive JSON exactly (the default parser can be 1 ulp off).
+serde_json = { workspace = true, features = ["float_roundtrip"] }

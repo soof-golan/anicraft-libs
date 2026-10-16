@@ -3,7 +3,7 @@
 mod common;
 
 use anim_text::{Paragraph, RichText, Run, TextEngine};
-use common::{engine, glyph_ids, run};
+use common::{glyph_ids, run, system_engine as engine};
 
 fn text_in(family: &str) -> RichText {
     RichText::new(vec![Paragraph::new(vec![Run { family: family.to_owned(), ..run("Resolved fonts") }])])

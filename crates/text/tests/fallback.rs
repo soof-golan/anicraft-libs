@@ -3,7 +3,7 @@
 mod common;
 
 use anim_text::{Paragraph, RichText, Run, Script, TextEngine};
-use common::{ARABIC, HEBREW, engine, engine_for, glyph_ids, run};
+use common::{ARABIC, HEBREW, glyph_ids, run, system_engine as engine, system_engine_for as engine_for};
 
 fn text_in(family: &str, text: &str) -> RichText {
     RichText::new(vec![Paragraph::new(vec![Run { family: family.to_owned(), ..run(text) }])])
