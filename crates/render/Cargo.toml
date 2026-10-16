@@ -19,6 +19,8 @@ thiserror = { workspace = true }
 tiny-skia = { workspace = true }
 
 [dev-dependencies]
+# The visual-verification fixtures (tests/visual) build shapes from XFL edge strings.
+anim-shape = { workspace = true }
 png = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
