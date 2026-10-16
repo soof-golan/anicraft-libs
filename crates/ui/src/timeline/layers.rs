@@ -188,12 +188,7 @@ fn layer_menu(ui: &mut Ui, layer: u64, kind: LayerKind, events: &mut Vec<LayerEv
         ("Duplicate Layer", Some(LayerEvent::Duplicate(layer)), true, false),
         ("", None, true, false),
         ("Guide", Some(LayerEvent::Convert { id: layer, kind: toggled(LayerKind::Guide) }), convertible, kind == LayerKind::Guide),
-        (
-            "Add Classic Motion Guide",
-            Some(LayerEvent::AddMotionGuide(layer)),
-            matches!(kind, LayerKind::Normal | LayerKind::Guided | LayerKind::Masked),
-            false,
-        ),
+        ("Add Classic Motion Guide", Some(LayerEvent::AddMotionGuide(layer)), matches!(kind, LayerKind::Normal | LayerKind::Guided | LayerKind::Masked), false),
         ("Mask", Some(LayerEvent::Convert { id: layer, kind: toggled(LayerKind::Mask) }), convertible, kind == LayerKind::Mask),
         ("Folder", Some(LayerEvent::Convert { id: layer, kind: toggled(LayerKind::Folder) }), convertible, kind == LayerKind::Folder),
         ("", None, true, false),
