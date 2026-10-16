@@ -14,12 +14,11 @@ pub fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/visual")
 }
 
-/// Where people look at the renders: the shared scratch area when it exists, else the temp folder.
-pub fn out_dir() -> PathBuf {
-    let shared = Path::new("/mnt/data/anim/scratch");
-    let dir = if shared.is_dir() { shared.join("visual/shape-render") } else { std::env::temp_dir().join("anim-visual-shape-render") };
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+/// Where people look at the renders: `$ANICRAFT_VISUAL_OUT/shape-render`, or nowhere when the variable is unset (CI).
+pub fn out_dir() -> Option<PathBuf> {
+    let dir = PathBuf::from(std::env::var_os("ANICRAFT_VISUAL_OUT")?).join("shape-render");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
 }
 
 fn write_png(path: &Path, width: u32, height: u32, straight: &[u8]) {
@@ -47,8 +46,9 @@ pub fn zoom(image: &Image, x: u32, y: u32, w: u32, h: u32, scale: u32) -> (u32, 
 
 /// Writes a zoomed crop as `<name>.png` in the scratch folder, for the Read tool.
 pub fn save_crop(name: &str, image: &Image, x: u32, y: u32, w: u32, h: u32, scale: u32) {
+    let Some(dir) = out_dir() else { return };
     let (cw, ch, bytes) = zoom(image, x, y, w, h, scale);
-    write_png(&out_dir().join(format!("{name}.png")), cw, ch, &bytes);
+    write_png(&dir.join(format!("{name}.png")), cw, ch, &bytes);
 }
 
 /// Saves the render (and an enlarged copy when it is small) to the scratch folder, then compares it with the golden
@@ -57,7 +57,9 @@ pub fn save_crop(name: &str, image: &Image, x: u32, y: u32, w: u32, h: u32, scal
 /// committed.
 pub fn finish(name: &str, image: &Image) {
     let straight = straight_rgba(image);
-    write_png(&out_dir().join(format!("{name}.png")), image.width, image.height, &straight);
+    if let Some(dir) = out_dir() {
+        write_png(&dir.join(format!("{name}.png")), image.width, image.height, &straight);
+    }
     let big = (900 / image.width.max(1)).clamp(1, 6);
     if big > 1 {
         save_crop(&format!("{name}@{big}x"), image, 0, 0, image.width, image.height, big);

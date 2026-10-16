@@ -19,12 +19,9 @@ pub fn render_tree(tree: &ArtworkTree) -> (u32, u32, Vec<u8>) {
     (image.width, image.height, image.premultiplied_rgba)
 }
 
-pub fn out_dir(component: &str) -> PathBuf {
-    // The shared scratch area only exists on the agents' machine; elsewhere use the temp dir.
-    let shared = Path::new("/mnt/data/anim/scratch");
-    let root = std::env::var_os("ANICRAFT_VISUAL_OUT")
-        .map_or_else(|| if shared.is_dir() { shared.join("visual") } else { std::env::temp_dir().join("anim-visual") }, PathBuf::from);
-    root.join(component)
+/// `$ANICRAFT_VISUAL_OUT/<component>`, or `None` when the variable is unset (CI): then nothing is written.
+pub fn out_dir(component: &str) -> Option<PathBuf> {
+    std::env::var_os("ANICRAFT_VISUAL_OUT").map(|root| PathBuf::from(root).join(component))
 }
 
 pub fn write_png(path: &Path, width: u32, height: u32, rgba: &[u8]) {
@@ -51,7 +48,7 @@ pub fn crop_zoom(rgba: &[u8], width: u32, x: u32, y: u32, cw: u32, ch: u32, scal
 
 /// Writes `<out>/<name>.png` 1:1 and `<out>/<name>@<scale>x.png` zoomed, for looking at with an image viewer.
 pub fn save(component: &str, name: &str, width: u32, height: u32, rgba: &[u8], scale: u32) {
-    let dir = out_dir(component);
+    let Some(dir) = out_dir(component) else { return };
     write_png(&dir.join(format!("{name}.png")), width, height, rgba);
     let (w, h, z) = crop_zoom(rgba, width, 0, 0, width, height, scale);
     write_png(&dir.join(format!("{name}@{scale}x.png")), w, h, &z);

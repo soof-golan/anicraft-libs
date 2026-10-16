@@ -2,7 +2,7 @@
 //!
 //! Each test builds a document aimed at one way the importer could be wrong, checks the layer tree, renders the
 //! tree on white, and probes pixels against the predictions in `tests/fixtures/visual/<name>.expect.md`. Renders
-//! land in `$ANICRAFT_VISUAL_OUT/artwork` (default `/mnt/data/anim/scratch/visual/artwork`).
+//! are written to `$ANICRAFT_VISUAL_OUT/artwork` when that variable is set; the pixel assertions run either way.
 
 #![allow(
     clippy::arithmetic_side_effects,

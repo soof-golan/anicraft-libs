@@ -4,7 +4,7 @@
 
 use std::fs::File;
 use std::io::BufWriter;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anim_core::kurbo::{Circle, Shape};
 use anim_core::{Affine, BezPath, ColorTransform, Rgba8, Size};
@@ -146,23 +146,18 @@ pub fn max_diff(a: &Image, b: &Image) -> u8 {
     a.premultiplied_rgba.iter().zip(&b.premultiplied_rgba).map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0)
 }
 
-/// Where test output goes: `$ANIM_RENDER_SCRATCH`, or the shared scratch area, or the temp dir.
-pub fn scratch_dir() -> PathBuf {
-    // The shared scratch area only exists on the machine the agents work on; elsewhere never create it.
-    let shared = Path::new("/mnt/data/anim/scratch");
-    let candidates = [
-        std::env::var_os("ANIM_RENDER_SCRATCH").map(PathBuf::from),
-        shared.is_dir().then(|| shared.join("anim-render")),
-        Some(std::env::temp_dir().join("anim-render")),
-    ];
-    candidates.into_iter().flatten().find(|dir| std::fs::create_dir_all(dir).is_ok()).unwrap_or_else(std::env::temp_dir)
+/// Where test output goes: `$ANICRAFT_VISUAL_OUT/anim-render`, or nowhere when the variable is unset (CI).
+pub fn scratch_dir() -> Option<PathBuf> {
+    let dir = PathBuf::from(std::env::var_os("ANICRAFT_VISUAL_OUT")?).join("anim-render");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
 }
 
-/// Writes `image` as a straight-alpha PNG named `name` (without extension). Failures are ignored: the PNGs are
-/// for people to look at, not part of the assertions.
+/// Writes `image` as a straight-alpha PNG named `name` (without extension) when `ANICRAFT_VISUAL_OUT` is set.
+/// Failures are ignored: the PNGs are for people to look at, not part of the assertions.
 pub fn save(name: &str, image: &Image) {
-    let path = scratch_dir().join(format!("{name}.png"));
-    let Ok(file) = File::create(path) else { return };
+    let Some(dir) = scratch_dir() else { return };
+    let Ok(file) = File::create(dir.join(format!("{name}.png"))) else { return };
     let mut encoder = png::Encoder::new(BufWriter::new(file), image.width, image.height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);

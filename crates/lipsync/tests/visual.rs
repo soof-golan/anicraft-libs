@@ -1,6 +1,7 @@
 //! Predict, render, inspect: synthetic audio fixtures with written predictions (`tests/fixtures/visual/*.expect.md`).
 //! Each test renders a PNG strip (waveform, predicted visemes, observed visemes) under
-//! `/mnt/data/anim/scratch/visual/anim-lipsync/` before it asserts, so a failure can be looked at.
+//! `$ANICRAFT_VISUAL_OUT/anim-lipsync/` (only when that variable is set) before it asserts, so a failure can be looked
+//! at. The assertions run either way.
 // Test code: casts, indexing and arithmetic are fine here.
 #![allow(
     clippy::as_conversions,
@@ -42,7 +43,7 @@ fn render(name: &str, samples: &[f32], rate: u32, predicted: &[(f32, f32, Viseme
     let end = samples.len() as f32 / rate as f32;
     let img = strip(samples, rate, &[predicted.to_vec(), segments(track, end)]);
     let path = img.save(&format!("{name}.png"));
-    println!("{name}: {:?} -> {}", secs(track), path.display());
+    println!("{name}: {:?} -> {}", secs(track), path.map_or_else(|| "(not saved)".into(), |p| p.display().to_string()));
 }
 
 /// A sibilant's first, partly filled window can read as a stop burst for 20 ms (indistinguishable from a click in

@@ -1,6 +1,6 @@
 //! Visual verification of shapes and rendering: hard synthetic fixtures, each with a prediction written down in
 //! `tests/fixtures/visual/<name>.expect.md` before the first render. The assertions here are the checked
-//! predictions; the PNGs written to `/mnt/data/anim/scratch/visual/shape-render/` (and zoomed crops) are what a person
+//! predictions; the PNGs written to `$ANICRAFT_VISUAL_OUT/shape-render/` when set (and zoomed crops) are what a person
 //! looks at, and the small goldens in `tests/fixtures/visual/` catch any later drift.
 
 // Integration tests may panic and use plain arithmetic; the no-panic rules are for shipped code.

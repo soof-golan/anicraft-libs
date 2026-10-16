@@ -27,8 +27,6 @@ use std::path::PathBuf;
 use anim_core::Tick;
 use anim_lipsync::{Viseme, VisemeKey, viseme_at};
 
-pub const OUT_DIR: &str = "/mnt/data/anim/scratch/visual/anim-lipsync";
-
 pub struct Rng(pub u32);
 
 impl Rng {
@@ -258,16 +256,16 @@ impl Image {
         out
     }
 
-    pub fn save(&self, name: &str) -> PathBuf {
-        let shared = std::path::Path::new("/mnt/data/anim/scratch");
-        let dir = if shared.is_dir() { PathBuf::from(OUT_DIR) } else { std::env::temp_dir().join("anim-lipsync-visual") };
+    /// Writes the strip to `$ANICRAFT_VISUAL_OUT/anim-lipsync/<name>`; does nothing (returns `None`) when unset.
+    pub fn save(&self, name: &str) -> Option<PathBuf> {
+        let dir = PathBuf::from(std::env::var_os("ANICRAFT_VISUAL_OUT")?).join("anim-lipsync");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(name);
         let mut enc = png::Encoder::new(BufWriter::new(File::create(&path).unwrap()), self.w as u32, self.h as u32);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         enc.write_header().unwrap().write_image_data(&self.rgb).unwrap();
-        path
+        Some(path)
     }
 }
 

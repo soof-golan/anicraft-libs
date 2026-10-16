@@ -1,6 +1,6 @@
 //! Golden tests for `anim-render`: small scenes whose pixels are checked exactly or with a stated tolerance.
-//! PNGs of the output are written to `$ANIM_RENDER_SCRATCH` (default `/mnt/data/anim/scratch/anim-render/`) so a
-//! person can look at them.
+//! PNGs of the output are written to `$ANICRAFT_VISUAL_OUT/anim-render/` when that variable is set, so a person can
+//! look at them; the assertions run either way.
 
 // Integration tests may panic and use plain arithmetic; the no-panic rules are for shipped code.
 #![allow(
