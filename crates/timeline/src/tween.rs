@@ -50,13 +50,9 @@ pub fn classic<'a>(start: &'a Frame, end: &'a Frame, t: f64) -> Vec<Placed<'a>> 
 #[must_use]
 pub fn classic_along<'a>(start: &'a Frame, end: &'a Frame, t: f64, guide: Option<&Guide>) -> Vec<Placed<'a>> {
     let params = TweenParams { rotate: start.motion_tween_rotate, times: start.motion_tween_rotate_times.unwrap_or(1.0), scale: start.motion_tween_scale };
-    let progress = Progress {
-        position: ease::for_target(start, EaseTarget::Position, t),
-        rotation: ease::for_target(start, EaseTarget::Rotation, t),
-        scale: ease::for_target(start, EaseTarget::Scale, t),
-    };
-    let color_p = ease::for_target(start, EaseTarget::Color, t);
-    let filter_p = ease::for_target(start, EaseTarget::Filters, t);
+    let [position, rotation, scale, color_p, filter_p] =
+        ease::for_targets(start, [EaseTarget::Position, EaseTarget::Rotation, EaseTarget::Scale, EaseTarget::Color, EaseTarget::Filters], t);
+    let progress = Progress { position, rotation, scale };
     let mut used = vec![false; end.elements.len()];
     start
         .elements

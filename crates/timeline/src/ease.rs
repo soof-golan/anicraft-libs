@@ -33,6 +33,26 @@ pub fn for_target(frame: &Frame, target: EaseTarget, p: f64) -> f64 {
     }
 }
 
+/// [`for_target`] for several properties at once. Properties that share one curve (the usual `All` entry) solve it
+/// once.
+#[must_use]
+pub fn for_targets<const N: usize>(frame: &Frame, targets: [EaseTarget; N], p: f64) -> [f64; N] {
+    let mut solved: [Option<(&EaseCurve, f64)>; N] = [None; N];
+    let mut count = 0;
+    targets.map(|target| {
+        let Some(curve) = frame.ease_for(target) else { return for_target(frame, target, p) };
+        if let Some((_, eased)) = solved.iter().flatten().find(|(c, _)| std::ptr::eq(*c, curve)) {
+            return *eased;
+        }
+        let eased = for_target(frame, target, p);
+        if let Some(slot) = solved.get_mut(count) {
+            *slot = Some((curve, eased));
+            count = count.saturating_add(1);
+        }
+        eased
+    })
+}
+
 /// A named preset such as `cubicIn`, `sineInOut` or `bounceOut`. `None` when the name is unknown.
 #[must_use]
 pub fn named(name: &str, p: f64) -> Option<f64> {
