@@ -129,6 +129,9 @@ Before landing, also check that the crate compiles for the other platforms:
 
 (Crates with C build scripts may fail to cross-check for lack of a C toolchain; say so in your report instead.)
 
+The queue itself (pueue groups, their parallelism, the q and land scripts) belongs to the orchestrator. Do not
+change it. If it seems mis-sized, say so in your report.
+
 ## Editing and landing
 
 - Create and modify files only with the Edit and Write tools, never with shell redirection, `sed`, `cat <<EOF`,
