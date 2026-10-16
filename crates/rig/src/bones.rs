@@ -266,8 +266,69 @@ impl Chain {
         self.result(target, options, 0)
     }
 
+    /// Every joint lies (almost) on one line: each bone after the first is within ~3 degrees of straight on or of
+    /// folded back (angle near 0 or pi relative to its parent).
+    fn is_near_collinear(&self) -> bool {
+        self.bones.iter().skip(1).all(|b| b.angle.sin().abs() < 0.05)
+    }
+
+    /// Bends the chain deterministically: alternating +0.1 and -0.1 rad on every bone, within the limits.
+    fn zigzag(&mut self) {
+        for (i, b) in self.bones.iter_mut().enumerate() {
+            let nudge = if i % 2 == 0 { 0.1 } else { -0.1 };
+            b.angle = b.limits.map_or_else(|| normalize_angle(b.angle + nudge), |l| l.clamp(b.angle + nudge));
+        }
+    }
+
+    /// A fixed starting pose for a restart: the first bone points at `target`, the others alternate `+amplitude` and
+    /// `-amplitude` radians (within the limits).
+    fn fan_towards(&mut self, target: Point, amplitude: f64) {
+        let toward = (target - self.root).y.atan2((target - self.root).x) - self.root_angle;
+        for (i, b) in self.bones.iter_mut().enumerate() {
+            let angle = match i {
+                0 => toward,
+                _ if i % 2 == 1 => amplitude,
+                _ => -amplitude,
+            };
+            b.angle = b.limits.map_or_else(|| normalize_angle(angle), |l| l.clamp(angle));
+        }
+    }
+
     fn solve_fabrik(&mut self, target: Point, options: &IkOptions) -> IkResult {
         let lengths: Vec<f64> = self.bones.iter().map(|b| if b.length.is_finite() { b.length.max(0.0) } else { 0.0 }).collect();
+        let reachable = self.root.distance(target) < self.reach();
+        // A chain that is straight, or folded back on itself, with a reachable target is a near-singular start: all
+        // passes stay in one line, so only the tiny perpendicular offset of the target is left and it never closes.
+        // Bend it first, in a fixed pattern, so that the result does not depend on how close to the line it was.
+        if reachable && self.is_near_collinear() {
+            self.zigzag();
+        }
+        let start = self.clone();
+        let mut used = self.fabrik_run(target, options, &lengths);
+        let mut result = self.result(target, options, used);
+        // FABRIK also crawls (rather than stalls) from poses that are almost, but not quite, folded or straight. When a
+        // reachable target is still missed, restart from a few fixed fans and keep the closest outcome.
+        if reachable && !result.reached {
+            for amplitude in [0.6, -0.6, 1.2] {
+                let mut candidate = start.clone();
+                candidate.fan_towards(target, amplitude);
+                let spent = candidate.fabrik_run(target, options, &lengths);
+                used = used.saturating_add(spent);
+                let attempt = candidate.result(target, options, spent);
+                if attempt.error < result.error {
+                    *self = candidate;
+                    result = attempt;
+                }
+                if result.reached {
+                    break;
+                }
+            }
+        }
+        IkResult { iterations: used, ..result }
+    }
+
+    /// FABRIK passes from the current pose; returns how many were used.
+    fn fabrik_run(&mut self, target: Point, options: &IkOptions, lengths: &[f64]) -> u32 {
         let mut used = 0;
         let mut previous = f64::INFINITY;
         for it in 0..options.max_iterations {
@@ -281,10 +342,7 @@ impl Chain {
                 }
                 // Stagnation, typically a perfectly straight chain whose collinear folds cannot reach the target:
                 // bend it in a zigzag so the next pass has a plane to work in.
-                for (i, b) in self.bones.iter_mut().enumerate() {
-                    let nudge = if i % 2 == 0 { 0.1 } else { -0.1 };
-                    b.angle = b.limits.map_or_else(|| normalize_angle(b.angle + nudge), |l| l.clamp(b.angle + nudge));
-                }
+                self.zigzag();
             }
             previous = error;
             used = it.saturating_add(1);
@@ -317,7 +375,7 @@ impl Chain {
             self.set_from_joints(&j);
             self.apply_limits();
         }
-        self.result(target, options, used)
+        used
     }
 
     /// Number of bones as `u32` (saturating), for callers that index bones by id.
@@ -420,6 +478,35 @@ mod tests {
         let r = c.solve_ik(Point::new(f64::NAN, 1.0), &IkOptions::default());
         assert!(!r.reached);
         assert_eq!(c, before);
+    }
+
+    /// A straight chain whose target lies almost exactly behind it (a fold of nearly 180 degrees) is a near-singular
+    /// configuration for FABRIK: every pass stays in the line and only the tiny perpendicular offset remains. Expected:
+    /// a reachable target is reached within tolerance anyway. Minimal input found by proptest.
+    #[test]
+    fn fabrik_reaches_target_behind_a_straight_chain() {
+        let mut c = Chain::new(Point::ZERO, vec![Bone::new(4.0); 4]);
+        let (ang, f) = (3.138_247_803_026_619_7_f64, 0.505_792_030_131_756_9_f64);
+        let d = c.reach() * f;
+        let target = Point::new(d * ang.cos(), d * ang.sin());
+        let r = c.solve_ik(target, &IkOptions { max_iterations: 400, tolerance: 1e-2 });
+        assert!(r.reached, "{r:?}");
+        let j = c.joints();
+        for (i, b) in c.bones.iter().enumerate() {
+            assert!((j[i].distance(j[i + 1]) - b.length).abs() < 1e-9);
+        }
+        // Found later by a long proptest run: three bones, target 3 degrees off the fold, FABRIK crawls.
+        let mut c = Chain::new(Point::ZERO, vec![Bone::new(4.0); 3]);
+        let (ang, f) = (-3.092_124_165_566_313_6_f64, 0.337_615_425_749_096_1_f64);
+        let d = c.reach() * f;
+        let r = c.solve_ik(Point::new(d * ang.cos(), d * ang.sin()), &IkOptions { max_iterations: 400, tolerance: 1e-2 });
+        assert!(r.reached, "{r:?}");
+        // Dead behind the chain and exactly behind it are the same problem.
+        for target in [Point::new(-8.0, 0.0), Point::new(-8.0, 1e-9), Point::new(-16.0 * 0.95, 0.0), Point::new(8.0, 0.0)] {
+            let mut c = Chain::new(Point::ZERO, vec![Bone::new(4.0); 4]);
+            let r = c.solve_ik(target, &IkOptions { max_iterations: 400, tolerance: 1e-2 });
+            assert!(r.reached, "{target:?}: {r:?}");
+        }
     }
 
     proptest! {
