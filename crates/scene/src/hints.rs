@@ -30,7 +30,8 @@ pub fn add_shape_hint(doc: &mut Document, id: &TimelineId, layer: usize, frame: 
             return Err(SceneError::NotTweenable("the keyframe does not start a shape tween"));
         }
         let end = l.next_keyframe_after(k.index).ok_or(SceneError::NoEndKeyframe { layer, frame: k.index })?;
-        let centre = |elements: &[Element]| crate::bounds::elements_bounds(elements.iter().filter(|e| matches!(e, Element::Shape(_))), &doc.library).map(|r| r.center());
+        let centre =
+            |elements: &[Element]| crate::bounds::elements_bounds(elements.iter().filter(|e| matches!(e, Element::Shape(_))), &doc.library).map(|r| r.center());
         (centre(&k.elements), centre(&end.elements))
     };
     let k = shape_tween_frame(doc, id, layer, frame)?;
@@ -88,11 +89,19 @@ pub fn remove_shape_hint(doc: &mut Document, id: &TimelineId, layer: usize, fram
 ///
 /// # Errors
 /// No keyframe at `frame`, or a curve that is not finite, not `1 + 3k` points, or not running from (0,0) to (1,1).
-pub fn set_custom_ease(doc: &mut Document, id: &TimelineId, layer: usize, frame: u32, target: EaseTarget, curve: Option<Vec<[f64; 2]>>) -> Result<(), SceneError> {
+pub fn set_custom_ease(
+    doc: &mut Document,
+    id: &TimelineId,
+    layer: usize,
+    frame: u32,
+    target: EaseTarget,
+    curve: Option<Vec<[f64; 2]>>,
+) -> Result<(), SceneError> {
     if let Some(points) = &curve {
         let n = points.len();
         let finite = points.iter().all(|p| p[0].is_finite() && p[1].is_finite());
-        let ends = points.first().is_some_and(|p| p[0].abs() < 1e-9 && p[1].abs() < 1e-9) && points.last().is_some_and(|p| (p[0] - 1.0).abs() < 1e-9 && (p[1] - 1.0).abs() < 1e-9);
+        let ends = points.first().is_some_and(|p| p[0].abs() < 1e-9 && p[1].abs() < 1e-9)
+            && points.last().is_some_and(|p| (p[0] - 1.0).abs() < 1e-9 && (p[1] - 1.0).abs() < 1e-9);
         if !(4..=301).contains(&n) || n.saturating_sub(1) % 3 != 0 || !finite || !ends {
             return Err(SceneError::InvalidRange("a custom ease is 1 + 3k finite points from (0,0) to (1,1)"));
         }

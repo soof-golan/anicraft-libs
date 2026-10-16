@@ -359,10 +359,8 @@ pub fn set_motion_key(doc: &mut Document, id: &TimelineId, layer: usize, frame: 
         let first = object.track(prop).and_then(|tr| tr.keys.first()).map_or(base, |key| key.value);
         // Stored values are in the file's frame of reference: the first key stands for the object.
         let stored = first + (value - base);
-        let (ease, curve) = object
-            .track(prop)
-            .and_then(|tr| tr.keys.iter().find(|key| (key.t - t).abs() < 1e-6))
-            .map_or((0, None), |key| (key.ease, key.curve.clone()));
+        let (ease, curve) =
+            object.track(prop).and_then(|tr| tr.keys.iter().find(|key| (key.t - t).abs() < 1e-6)).map_or((0, None), |key| (key.ease, key.curve.clone()));
         object.set_key(prop, base, MotionKey { t, value: stored, ease, curve });
         Ok(())
     })
@@ -400,7 +398,15 @@ pub struct KeyEase {
 ///
 /// # Errors
 /// Not a motion tween, no such key, acceleration outside -100 ..= 100, or an unusable curve.
-pub fn set_motion_key_ease(doc: &mut Document, id: &TimelineId, layer: usize, frame: u32, prop: MotionProp, offset: u32, key_ease: KeyEase) -> Result<(), SceneError> {
+pub fn set_motion_key_ease(
+    doc: &mut Document,
+    id: &TimelineId,
+    layer: usize,
+    frame: u32,
+    prop: MotionProp,
+    offset: u32,
+    key_ease: KeyEase,
+) -> Result<(), SceneError> {
     let KeyEase { acceleration: ease, curve } = key_ease;
     if !(-100..=100).contains(&ease) {
         return Err(SceneError::InvalidRange("acceleration must be between -100 and 100"));
@@ -445,19 +451,42 @@ pub const MOTION_PRESETS: &[MotionPreset] = &[
     MotionPreset {
         name: "pulse",
         description: "Grows and shrinks back",
-        keys: &[(MotionProp::ScaleX, 0.0, 1.0, 0), (MotionProp::ScaleX, 0.5, 1.3, 0), (MotionProp::ScaleX, 1.0, 1.0, 0), (MotionProp::ScaleY, 0.0, 1.0, 0), (MotionProp::ScaleY, 0.5, 1.3, 0), (MotionProp::ScaleY, 1.0, 1.0, 0)],
+        keys: &[
+            (MotionProp::ScaleX, 0.0, 1.0, 0),
+            (MotionProp::ScaleX, 0.5, 1.3, 0),
+            (MotionProp::ScaleX, 1.0, 1.0, 0),
+            (MotionProp::ScaleY, 0.0, 1.0, 0),
+            (MotionProp::ScaleY, 0.5, 1.3, 0),
+            (MotionProp::ScaleY, 1.0, 1.0, 0),
+        ],
     },
     MotionPreset {
         name: "bounce",
         description: "Hops twice",
-        keys: &[(MotionProp::Y, 0.0, 0.0, 0), (MotionProp::Y, 0.25, -80.0, 0), (MotionProp::Y, 0.5, 0.0, 0), (MotionProp::Y, 0.75, -30.0, 0), (MotionProp::Y, 1.0, 0.0, 0)],
+        keys: &[
+            (MotionProp::Y, 0.0, 0.0, 0),
+            (MotionProp::Y, 0.25, -80.0, 0),
+            (MotionProp::Y, 0.5, 0.0, 0),
+            (MotionProp::Y, 0.75, -30.0, 0),
+            (MotionProp::Y, 1.0, 0.0, 0),
+        ],
     },
     MotionPreset {
         name: "wiggle",
         description: "Rocks left and right",
-        keys: &[(MotionProp::Rotation, 0.0, 0.0, 0), (MotionProp::Rotation, 0.25, -12.0, 0), (MotionProp::Rotation, 0.5, 12.0, 0), (MotionProp::Rotation, 0.75, -12.0, 0), (MotionProp::Rotation, 1.0, 0.0, 0)],
+        keys: &[
+            (MotionProp::Rotation, 0.0, 0.0, 0),
+            (MotionProp::Rotation, 0.25, -12.0, 0),
+            (MotionProp::Rotation, 0.5, 12.0, 0),
+            (MotionProp::Rotation, 0.75, -12.0, 0),
+            (MotionProp::Rotation, 1.0, 0.0, 0),
+        ],
     },
-    MotionPreset { name: "zoom-in", description: "Grows from 20 percent", keys: &[(MotionProp::ScaleX, 0.0, 0.2, 0), (MotionProp::ScaleX, 1.0, 1.0, 40), (MotionProp::ScaleY, 0.0, 0.2, 0), (MotionProp::ScaleY, 1.0, 1.0, 40)] },
+    MotionPreset {
+        name: "zoom-in",
+        description: "Grows from 20 percent",
+        keys: &[(MotionProp::ScaleX, 0.0, 0.2, 0), (MotionProp::ScaleX, 1.0, 1.0, 40), (MotionProp::ScaleY, 0.0, 0.2, 0), (MotionProp::ScaleY, 1.0, 1.0, 40)],
+    },
 ];
 
 /// Changes one property of the object itself: added for position, rotation and alpha, multiplied for the scales.
