@@ -24,6 +24,7 @@ pub mod edges;
 pub mod error;
 pub mod geometry;
 pub mod number;
+pub mod patterned;
 pub mod segment;
 pub mod styles;
 

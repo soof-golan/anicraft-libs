@@ -239,7 +239,8 @@ impl StrokeKind {
     }
 }
 
-/// A patterned stroke. It renders as its solid base; the pattern attributes are kept verbatim so files round-trip.
+/// A patterned stroke. The pattern attributes are kept verbatim so files round-trip; [`crate::patterned`] turns them
+/// into display nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OtherStroke {
     pub kind: StrokeKind,
@@ -253,7 +254,7 @@ pub struct OtherStroke {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StrokeStyle {
     Solid(SolidStroke),
-    /// Dashed, dotted, ragged, stipple and hatched strokes; rendered as solid.
+    /// Dashed, dotted, ragged, stipple and hatched strokes.
     Other(OtherStroke),
 }
 

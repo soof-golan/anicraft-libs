@@ -37,7 +37,7 @@ impl ImageResolver for NoImages {
 
 impl EdgeShape {
     /// The paintable nodes of this shape: a [`Node::Fill`] (even-odd) per used fill style, then a [`Node::Stroke`]
-    /// per used stroke style. Patterned strokes render as solid.
+    /// per used stroke style. Patterned strokes expand into their pattern ([`crate::patterned`]).
     #[must_use]
     pub fn to_display(&self, images: &dyn ImageResolver) -> Vec<Node> {
         let assembled = self.assemble();
@@ -49,12 +49,12 @@ impl EdgeShape {
         for run in assembled.strokes {
             let Some(style) = self.stroke(run.style) else { continue };
             let solid = style.solid();
-            nodes.push(Node::Stroke(Stroke {
-                transform: Affine::IDENTITY,
-                path: run.path,
-                style: display_stroke(solid),
-                paint: paint_for(&solid.fill, images),
-            }));
+            let paint = paint_for(&solid.fill, images);
+            if let crate::styles::StrokeStyle::Other(other) = style {
+                nodes.extend(crate::patterned::nodes(&run.path, other, &display_stroke(solid), paint));
+                continue;
+            }
+            nodes.push(Node::Stroke(Stroke { transform: Affine::IDENTITY, path: run.path, style: display_stroke(solid), paint }));
         }
         nodes
     }
