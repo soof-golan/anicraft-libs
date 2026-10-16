@@ -104,6 +104,8 @@ pub struct Evaluator<'a> {
     /// Display nodes of the shapes stored in the document, by address (the document outlives the evaluator and is
     /// not mutated while it is borrowed). Tweened shapes are temporaries and never enter.
     shapes: HashMap<usize, Vec<Node>>,
+    /// Motion guides by the address of the keyframe that holds them.
+    guides: HashMap<usize, Option<Guide>>,
 }
 
 impl std::fmt::Debug for Evaluator<'_> {
@@ -126,6 +128,7 @@ impl<'a> Evaluator<'a> {
             options: EvalOptions::default(),
             plans: HashMap::new(),
             shapes: HashMap::new(),
+            guides: HashMap::new(),
         }
     }
 
@@ -202,6 +205,7 @@ impl<'a> Evaluator<'a> {
         self.image_ids.clear();
         self.plans.clear();
         self.shapes.clear();
+        self.guides.clear();
     }
 
     /// Number of frames of scene `scene`.
@@ -351,8 +355,10 @@ impl<'a> Evaluator<'a> {
         guided: Option<GuidedTween<'a>>,
     ) -> Vec<Item<'a>> {
         let hold = || keyframe.elements.iter().map(|e| Item::Placed(Placed::hold(e))).collect::<Vec<_>>();
-        if let Some(g) = guided {
-            return tween::classic_along(g.start, g.end, g.t, Some(&g.guide)).into_iter().map(Item::Placed).collect();
+        if let Some(g) = guided
+            && let Some(guide) = self.guide(g.guide_frame)
+        {
+            return tween::classic_along(g.start, g.end, g.t, Some(guide)).into_iter().map(Item::Placed).collect();
         }
         if frame <= keyframe.index {
             return hold();
@@ -484,6 +490,14 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// The motion guide a keyframe holds, measured once per evaluator; `None` when it has no stroke.
+    fn guide(&mut self, frame: &'a Frame) -> Option<&Guide> {
+        if self.guides.len() >= MAX_PLANS {
+            self.guides.clear();
+        }
+        self.guides.entry(std::ptr::from_ref(frame).addr()).or_insert_with(|| Guide::from_keyframe(frame)).as_ref()
+    }
+
     /// The nodes of a shape.
     fn display_of(&mut self, shape: &EdgeShape) -> Vec<Node> {
         let mut resolved: HashMap<String, ImageId> = HashMap::new();
@@ -590,7 +604,8 @@ struct GuidedTween<'a> {
     start: &'a Frame,
     end: &'a Frame,
     t: f64,
-    guide: Guide,
+    /// The keyframe of the guide layer that holds the path.
+    guide_frame: &'a Frame,
 }
 
 /// The guided classic tween that decides what the layer shows at `frame`, if its parent is a guide layer with a
@@ -607,8 +622,8 @@ fn guided_tween<'a>(timeline: &'a Timeline, layer: &'a Layer, keyframe: &'a Fram
     };
     let span = end.index.checked_sub(start.index).filter(|s| *s > 0)?;
     let t = f64::from(frame.saturating_sub(start.index)) / f64::from(span);
-    let guide = Guide::from_keyframe(guide_layer.keyframe_at(frame).or_else(|| guide_layer.frames.first())?)?;
-    Some(GuidedTween { start, end, t, guide })
+    let guide_frame = guide_layer.keyframe_at(frame).or_else(|| guide_layer.frames.first())?;
+    Some(GuidedTween { start, end, t, guide_frame })
 }
 
 fn onion_alpha(distance: u32, count: u32) -> f32 {

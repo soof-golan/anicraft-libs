@@ -18,6 +18,8 @@ const WINDOW: f64 = 1.0e-4;
 pub struct Guide {
     segments: Vec<(PathSeg, f64)>,
     total: f64,
+    /// Where the path starts and ends.
+    ends: (Point, Point),
 }
 
 impl Guide {
@@ -30,7 +32,9 @@ impl Guide {
         first.extend(elements.take_while(|e| !matches!(e, PathEl::MoveTo(_))));
         let segments: Vec<(PathSeg, f64)> = first.segments().map(|seg| (seg, seg.arclen(ACCURACY))).filter(|(_, len)| len.is_finite() && *len > 0.0).collect();
         let total = segments.iter().map(|(_, l)| l).sum::<f64>();
-        (total > 0.0).then_some(Self { segments, total })
+        let mut guide = Self { segments, total, ends: (Point::ORIGIN, Point::ORIGIN) };
+        guide.ends = (guide.at(0.0, false).0, guide.at(1.0, false).0);
+        (total > 0.0).then_some(guide)
     }
 
     /// The guide of a keyframe's content: the first stroke of its first shape, in the keyframe's space.
@@ -52,15 +56,16 @@ impl Guide {
         let along = if fraction.is_finite() { fraction.clamp(0.0, 1.0) } else { 0.0 };
         let target = if reversed { 1.0 - along } else { along } * self.total;
         let mut walked = 0.0;
-        let mut found = self.segments.first().map(|(s, _)| (s, 0.0));
+        let mut found = None;
         for (seg, len) in &self.segments {
-            found = Some((seg, seg.inv_arclen((target - walked).clamp(0.0, *len), ACCURACY)));
+            found = Some((seg, *len, walked));
             if target <= walked + len {
                 break;
             }
             walked += len;
         }
-        let Some((seg, t)) = found else { return (Point::ORIGIN, 0.0) };
+        let Some((seg, len, walked)) = found else { return (Point::ORIGIN, 0.0) };
+        let t = seg.inv_arclen((target - walked).clamp(0.0, len), ACCURACY);
         let (a, b) = ((t - WINDOW).max(0.0), (t + WINDOW).min(1.0));
         let d = seg.eval(b) - seg.eval(a);
         let angle = if d.hypot() > 0.0 { d.y.atan2(d.x) } else { 0.0 };
@@ -71,7 +76,7 @@ impl Guide {
     /// direction is walked from the start keyframe's end.
     #[must_use]
     pub fn runs_backwards(&self, from: Point, to: Point) -> bool {
-        let (head, tail) = (self.at(0.0, false).0, self.at(1.0, false).0);
+        let (head, tail) = self.ends;
         head.distance(to) + tail.distance(from) < head.distance(from) + tail.distance(to)
     }
 }
@@ -83,10 +88,10 @@ pub fn follow(m: Affine, from: Affine, to: Affine, guide: &Guide, progress: f64,
     let (a, b) = (from.translation().to_point(), to.translation().to_point());
     let reversed = guide.runs_backwards(a, b);
     let (point, angle) = guide.at(progress, reversed);
-    let (head, tail) = (guide.at(0.0, reversed).0, guide.at(1.0, reversed).0);
     let offset = if snap {
         Vec2::ZERO
     } else {
+        let (head, tail) = if reversed { (guide.ends.1, guide.ends.0) } else { guide.ends };
         let (start, end) = (a - head, b - tail);
         start + (end - start) * progress
     };
