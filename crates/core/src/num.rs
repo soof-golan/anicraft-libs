@@ -52,10 +52,11 @@ pub const fn ceil_f64_to_i32(v: f64) -> i32 {
     reason = "the value is clamped to 0..=255 first, so the cast is exact"
 )]
 pub fn unit_f32_to_u8(v: f32) -> u8 {
-    if v.is_nan() {
-        return 0;
-    }
-    (v.clamp(0.0, 1.0) * 255.0).round() as u8
+    // `f32::round` is a library call on baseline x86; truncating and testing the (exact) remainder rounds half
+    // up the same way. NaN truncates to 0 and fails the remainder test.
+    let scaled = v.clamp(0.0, 1.0) * 255.0;
+    let whole = scaled as u8;
+    whole.saturating_add(u8::from(scaled - f32::from(whole) >= 0.5))
 }
 
 /// `f64` to `f32`, rounding to nearest (values beyond `f32::MAX` become infinity, as IEEE rounding does).
@@ -112,6 +113,25 @@ mod tests {
         assert_eq!(unit_f32_to_u8(0.5), 128);
         assert_eq!(unit_f32_to_u8(2.0), 255);
         assert_eq!(unit_f32_to_u8(f32::NAN), 0);
+    }
+
+    #[test]
+    #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::float_cmp, reason = "compares against the library rounding")]
+    fn unit_to_byte_matches_library_rounding_on_every_nearby_float() {
+        // Every float within a few ulps of each half-way point and each whole byte, plus a sweep of the range.
+        let mut values: Vec<f32> = (0..=255_u16).map(|b| f32::from(b) / 255.0).collect();
+        for b in 0..255_u16 {
+            values.push((f32::from(b) + 0.5) / 255.0);
+        }
+        for step in 0..=2_000_000_u32 {
+            values.push(f32::from_bits(0x3f80_0000_u32.saturating_sub(step.saturating_mul(2))));
+            values.push(step as f32 / 2_000_000.0);
+        }
+        let around: Vec<f32> = values.iter().flat_map(|v| (0..8_u32).flat_map(move |k| [f32::from_bits(v.to_bits().wrapping_add(k)), f32::from_bits(v.to_bits().wrapping_sub(k))])).collect();
+        for v in values.into_iter().chain(around) {
+            let expected = if v.is_nan() { 0 } else { (v.clamp(0.0, 1.0) * 255.0).round() as u8 };
+            assert_eq!(unit_f32_to_u8(v), expected, "{v:e}");
+        }
     }
 
     #[test]
