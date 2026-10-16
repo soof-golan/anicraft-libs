@@ -98,7 +98,8 @@ pub struct Evaluator<'a> {
     provider: Box<dyn ImageProvider>,
     images: ImageStore,
     image_ids: HashMap<String, Option<ImageId>>,
-    text: TextEngine,
+    /// Created on first use: loading the system fonts is by far the most expensive part of building an evaluator.
+    text: Option<TextEngine>,
     options: EvalOptions,
     plans: HashMap<PlanKey, MorphPlan>,
     /// Display nodes of the shapes stored in the document, by address (the document outlives the evaluator and is
@@ -124,7 +125,7 @@ impl<'a> Evaluator<'a> {
             provider: Box::new(NoDecoder),
             images: ImageStore::new(),
             image_ids: HashMap::new(),
-            text: TextEngine::new(),
+            text: None,
             options: EvalOptions::default(),
             plans: HashMap::new(),
             shapes: HashMap::new(),
@@ -149,7 +150,7 @@ impl<'a> Evaluator<'a> {
     /// Replaces the text engine (to share registered fonts, or to use one without system fonts in tests).
     #[must_use]
     pub fn with_text_engine(mut self, engine: TextEngine) -> Self {
-        self.text = engine;
+        self.text = Some(engine);
         self
     }
 
@@ -178,8 +179,8 @@ impl<'a> Evaluator<'a> {
     }
 
     /// Mutable access to the text engine (register fonts, resolve names).
-    pub const fn text_engine_mut(&mut self) -> &mut TextEngine {
-        &mut self.text
+    pub fn text_engine_mut(&mut self) -> &mut TextEngine {
+        self.text.get_or_insert_with(TextEngine::new)
     }
 
     /// The decoded bitmaps; hand this to the renderer together with the display lists.
@@ -470,7 +471,7 @@ impl<'a> Evaluator<'a> {
                 (!children.is_empty()).then(|| Node::Group(Group { transform: placed.matrix, children, key, ..Group::default() }))
             }
             Element::Text(t) => {
-                let children = text_nodes(&mut self.text, t);
+                let children = text_nodes(self.text_engine_mut(), t);
                 (!children.is_empty()).then(|| Node::Group(Group { transform: placed.matrix, children, key, ..Group::default() }))
             }
             Element::Group(g) => {

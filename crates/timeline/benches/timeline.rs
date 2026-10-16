@@ -266,6 +266,9 @@ fn bench(c: &mut Criterion) {
         // Warm: the evaluator keeps its shape-tween plans between frames.
         c.bench_function(&format!("frame/{name}"), |b| b.iter(|| ev.frame(0, black_box(*frame))));
     }
+    // Building an evaluator (it used to load the system fonts) and the font load alone.
+    c.bench_function("new/evaluator", |b| b.iter(|| Evaluator::new(black_box(&docs[0].1))));
+    c.bench_function("new/text_engine", |b| b.iter(anim_text::TextEngine::new));
     // Cold: a new evaluator per frame pays for every shape-tween plan.
     let doc = shape_tweens();
     c.bench_function("frame_cold/shape_tweens_20", |b| b.iter(|| Evaluator::new(&doc).frame(0, black_box(23))));
