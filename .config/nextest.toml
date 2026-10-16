@@ -1,0 +1,15 @@
+# cargo-nextest settings (CI runs `mbx nextest run`; `mbx test` still works locally). Nextest runs every test in its own
+# process and spreads them over all test binaries at once, so the few seconds of actual testing never wait on a link.
+
+[profile.default]
+# One stuck test must not hold the job for the 45 minute job limit.
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+# The export tests that rasterise SVG through headless Chrome measure animation timing against a virtual clock; many
+# Chrome instances at once on a 4-core runner make that flaky, so they take turns.
+[test-groups]
+chrome = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(anim-export) and (test(/^visual::/) or test(/^visual_bitmap::/))'
+test-group = 'chrome'

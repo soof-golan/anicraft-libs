@@ -77,7 +77,7 @@ jobs:
           rustc_id="$(rustc -vV | sha256sum | cut -c1-8)"
           prefix="${{ runner.os }}-${{ runner.arch }}-ci-${rustc_id}"
           echo "prefix=${prefix}" >> "$GITHUB_OUTPUT"
-          echo "key=${prefix}-$(date +%G%V)-${{ hashFiles('**/Cargo.lock') }}" >> "$GITHUB_OUTPUT"
+          echo "key=${prefix}-$(date +%G%V)-${{ hashFiles('Cargo.lock') }}" >> "$GITHUB_OUTPUT"
       - uses: jdx/mr-boxington-action@v1
         with:
           working-directory: ${{ env.DEV_DRIVE_WORKSPACE || '.' }}
