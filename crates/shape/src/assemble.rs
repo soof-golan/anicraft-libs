@@ -13,7 +13,7 @@ use anim_core::num::round_f64_to_i64;
 use anim_core::{BezPath, Point};
 
 use crate::edges::{Edge, EdgeShape};
-use crate::segment::{Segment, TWIPS_PER_PX};
+use crate::segment::{Segment, TWIPS_PER_PX, fingerprint};
 use crate::styles::StrokeStyle;
 
 /// End points closer than this many twips are the same vertex.
@@ -96,7 +96,7 @@ impl EdgeShape {
         let fills = fill_pieces
             .into_iter()
             .filter_map(|(style, pieces)| {
-                let contours = chain_contours(pieces);
+                let contours = chain_contours(drop_duplicates(pieces));
                 (!contours.is_empty()).then(|| FillRegion { style, path: contours_to_path(&contours) })
             })
             .collect();
@@ -149,6 +149,23 @@ fn split_continuous(segments: &[Segment]) -> Vec<Vec<Segment>> {
         }
     }
     pieces
+}
+
+/// Removes pieces that repeat an earlier piece exactly. A boundary listed twice (an edge duplicated in a damaged
+/// file, or one boundary given both as `fill_style1` forward and `fill_style0` reversed) would otherwise become two
+/// coincident contours, and the even-odd fill would cancel them into a hole.
+fn drop_duplicates(pieces: Vec<Vec<Segment>>) -> Vec<Vec<Segment>> {
+    let mut by_print: HashMap<u64, Vec<usize>> = HashMap::new();
+    let mut kept: Vec<Vec<Segment>> = Vec::with_capacity(pieces.len());
+    for piece in pieces {
+        let bucket = by_print.entry(fingerprint(&piece)).or_default();
+        if bucket.iter().any(|&at| kept.get(at) == Some(&piece)) {
+            continue;
+        }
+        bucket.push(kept.len());
+        kept.push(piece);
+    }
+    kept
 }
 
 /// A spatial hash over points with one-twip cells: everything within [`JOIN_EPS`] of a point is in the 3x3 cells
@@ -507,6 +524,20 @@ mod tests {
         let region = assembled.fills.first().unwrap();
         assert_eq!(region.path.elements().iter().filter(|e| matches!(e, anim_core::kurbo::PathEl::MoveTo(_))).count(), 2);
         assert!((area(&region.path) - 200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_boundary_listed_twice_does_not_cancel_itself_under_even_odd() {
+        // The same edge twice, and the same boundary once forward (fill on the right) and once reversed (fill on the
+        // left): both give one contour, not two coincident ones.
+        let square = "!0 0|200 0|200 200|0 200|0 0";
+        let twice = shape(1, 0, vec![edge(0, 1, 0, square), edge(0, 1, 0, square)]).assemble();
+        let mixed = shape(1, 0, vec![edge(0, 1, 0, square), edge(1, 0, 0, "!0 0|0 200|200 200|200 0|0 0")]).assemble();
+        for assembled in [twice, mixed] {
+            let region = assembled.fills.first().unwrap();
+            assert_eq!(region.path.elements().iter().filter(|e| matches!(e, anim_core::kurbo::PathEl::MoveTo(_))).count(), 1);
+            assert_eq!(region.path.winding(Point::new(5.0, 5.0)).abs(), 1);
+        }
     }
 
     #[test]
