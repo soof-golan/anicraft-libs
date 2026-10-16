@@ -341,10 +341,22 @@ impl<'a> Evaluator<'a> {
     fn layer_nodes(&mut self, timeline: &'a Timeline, layer_index: usize, time: Time, state: &mut State<'a>, out: &mut Vec<Node>) {
         let Some(layer) = timeline.layers.get(layer_index) else { return };
         let Some(keyframe) = layer.keyframe_at(time.frame) else { return };
-        let since = time.frame.saturating_sub(keyframe.index);
         let top = state.stack.is_empty();
-        let guided = guided_tween(timeline, layer, keyframe, time.frame);
-        let items = self.layer_items(timeline, layer, keyframe, layer_index, time.frame, guided);
+        let (keyframe, items) = if layer.armature.is_some() {
+            let rest = layer.rest_keyframe().unwrap_or(keyframe);
+            let items = crate::armature::posed_elements(layer, time.frame)
+                .into_iter()
+                .map(|posed| match posed {
+                    crate::armature::Posed::Element { element, matrix } => Item::Placed(Placed { matrix, ..Placed::hold(element) }),
+                    crate::armature::Posed::Shape(shape) => Item::Morphed { shape, matrix: Affine::IDENTITY },
+                })
+                .collect();
+            (rest, items)
+        } else {
+            let guided = guided_tween(timeline, layer, keyframe, time.frame);
+            (keyframe, self.layer_items(timeline, layer, keyframe, layer_index, time.frame, guided))
+        };
+        let since = time.frame.saturating_sub(keyframe.index);
         for (i, item) in items.into_iter().enumerate() {
             let node_key = top.then(|| element_key(layer_index, i));
             out.extend(self.item_node(item, node_key, since, time, state, 0));

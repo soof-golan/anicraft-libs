@@ -21,6 +21,9 @@
 //!   the baseline with the path when "orient to path" is set (see [`guide`]).
 //! - **Shape tweens** use `anim-morph`, with the keyframe's shape hints. **Motion-object tweens** read what they can
 //!   of `motionObjectXML` (see [`motion`]) and otherwise hold the first keyframe.
+//! - **Armatures**: a layer with an `anim_scene::Armature` draws its first keyframe's elements moved by the bones'
+//!   pose at the frame (symbol armatures) or deformed by them (shape armatures); poses tween between pose keyframes
+//!   (see [`armature`]).
 //! - **Symbols**: graphic instances are locked to the parent timeline (loop, play once, single frame from
 //!   `first_frame`); movie clips show `first_frame` unless [`EvalOptions::advance_movie_clips`]; buttons show Up.
 //!   Nesting is limited and cycles are cut.
@@ -31,6 +34,7 @@
 //! Coordinates: stage pixels, y down. Top-level element groups carry a [`Group::key`](anim_display::Group::key) from
 //! [`element_key`], so a click found by the renderer maps back to a layer and element.
 
+pub mod armature;
 pub mod ease;
 pub mod guide;
 pub mod images;
