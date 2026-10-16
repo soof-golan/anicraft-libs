@@ -16,7 +16,12 @@ anim-display = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 
+[[bench]]
+name = "shape"
+harness = false
+
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false }
 # Sample-gated tests read the FLA zips by local file headers (their central directory is 54 bytes short).
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 proptest = { workspace = true }
