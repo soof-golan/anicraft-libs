@@ -140,7 +140,7 @@ impl SpriteSheet {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Slot {
     x: u32,
     y: u32,
@@ -189,27 +189,34 @@ impl MaxRects {
         }
         let placed = best?.2;
         let mut next = Vec::with_capacity(self.free.len().saturating_add(4));
+        // Whether each entry of `next` is a fragment cut from a rectangle that overlapped `placed`.
+        let mut fragment = Vec::with_capacity(self.free.len().saturating_add(4));
         for f in &self.free {
             if !f.intersects(placed) {
                 next.push(*f);
+                fragment.push(false);
                 continue;
             }
-            if placed.x > f.x {
-                next.push(Slot { w: placed.x.saturating_sub(f.x), ..*f });
-            }
-            if placed.right() < f.right() {
-                next.push(Slot { x: placed.right(), w: f.right().saturating_sub(placed.right()), ..*f });
-            }
-            if placed.y > f.y {
-                next.push(Slot { h: placed.y.saturating_sub(f.y), ..*f });
-            }
-            if placed.bottom() < f.bottom() {
-                next.push(Slot { y: placed.bottom(), h: f.bottom().saturating_sub(placed.bottom()), ..*f });
+            let cuts = [
+                (placed.x > f.x).then(|| Slot { w: placed.x.saturating_sub(f.x), ..*f }),
+                (placed.right() < f.right()).then(|| Slot { x: placed.right(), w: f.right().saturating_sub(placed.right()), ..*f }),
+                (placed.y > f.y).then(|| Slot { h: placed.y.saturating_sub(f.y), ..*f }),
+                (placed.bottom() < f.bottom()).then(|| Slot { y: placed.bottom(), h: f.bottom().saturating_sub(placed.bottom()), ..*f }),
+            ];
+            for cut in cuts.into_iter().flatten() {
+                next.push(cut);
+                fragment.push(true);
             }
         }
-        // Drop free rectangles that lie inside another one.
-        let keep: Vec<bool> =
-            next.iter().enumerate().map(|(i, a)| !next.iter().enumerate().any(|(j, b)| i != j && b.contains(*a) && (!a.contains(*b) || j < i))).collect();
+        // Drop free rectangles that lie inside another one. The list held no such rectangle before, and a fragment lies
+        // inside the rectangle it was cut from, so an untouched rectangle can never be inside a fragment: only the
+        // fragments need checking, each against everything.
+        let keep: Vec<bool> = next
+            .iter()
+            .zip(&fragment)
+            .enumerate()
+            .map(|(i, (a, &is_fragment))| !is_fragment || !next.iter().enumerate().any(|(j, b)| i != j && b.contains(*a) && (!a.contains(*b) || j < i)))
+            .collect();
         self.free = next.into_iter().zip(keep).filter_map(|(r, k)| k.then_some(r)).collect();
         Some(placed)
     }
@@ -467,4 +474,52 @@ pub fn export_sprite_sheet(
         files: vec![png_path.to_path_buf(), json_path.to_path_buf()],
         bytes,
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
+mod tests {
+    use super::*;
+
+    /// The free list after placing `placed`, pruned by checking every rectangle against every other.
+    fn reference_split(free: &[Slot], placed: Slot) -> Vec<Slot> {
+        let mut next = Vec::new();
+        for f in free {
+            if !f.intersects(placed) {
+                next.push(*f);
+                continue;
+            }
+            if placed.x > f.x {
+                next.push(Slot { w: placed.x - f.x, ..*f });
+            }
+            if placed.right() < f.right() {
+                next.push(Slot { x: placed.right(), w: f.right() - placed.right(), ..*f });
+            }
+            if placed.y > f.y {
+                next.push(Slot { h: placed.y - f.y, ..*f });
+            }
+            if placed.bottom() < f.bottom() {
+                next.push(Slot { y: placed.bottom(), h: f.bottom() - placed.bottom(), ..*f });
+            }
+        }
+        let keep: Vec<bool> =
+            next.iter().enumerate().map(|(i, a)| !next.iter().enumerate().any(|(j, b)| i != j && b.contains(*a) && (!a.contains(*b) || j < i))).collect();
+        next.into_iter().zip(keep).filter_map(|(r, k)| k.then_some(r)).collect()
+    }
+
+    #[test]
+    fn pruning_only_fragments_keeps_the_full_pruning_result() {
+        let mut bin = MaxRects::new(200, 150);
+        let mut seed = 12345_u32;
+        let mut next = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            seed >> 16
+        };
+        for _ in 0..80 {
+            let (w, h) = (1 + next() % 40, 1 + next() % 40);
+            let before = bin.free.clone();
+            let Some(placed) = bin.insert(w, h) else { continue };
+            assert_eq!(bin.free, reference_split(&before, placed));
+        }
+    }
 }
