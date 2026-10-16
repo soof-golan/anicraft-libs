@@ -56,7 +56,17 @@ pub struct StageViewState {
     pub show_grid: bool,
     pub show_guides: bool,
     pub lock_guides: bool,
+    /// Horizontal grid spacing in stage pixels.
     pub grid_size: f32,
+    /// Vertical grid spacing in stage pixels; `0` follows `grid_size`.
+    #[serde(default)]
+    pub grid_size_y: f32,
+    /// Colour of the grid lines; the theme's by default.
+    #[serde(default)]
+    pub grid_color: Option<Color32>,
+    /// Colour of the guides; the theme's by default.
+    #[serde(default)]
+    pub guide_color: Option<Color32>,
     pub guides: Vec<Guide>,
     pub overlays: Vec<Overlay>,
     pub wheel_mode: WheelMode,
@@ -66,6 +76,11 @@ pub struct StageViewState {
     pub cursor: Option<CursorIcon>,
     /// Draw the document edge.
     pub show_stage_border: bool,
+    /// How far the texture reaches beyond the document on every side, as a fraction of the document size (the
+    /// pasteboard). The texture then covers the document grown by this margin, and a transparent texel shows the
+    /// pasteboard colour.
+    #[serde(default)]
+    pub texture_margin: f32,
 }
 
 impl StageViewState {
@@ -84,13 +99,24 @@ impl StageViewState {
             show_guides: true,
             lock_guides: false,
             grid_size: 20.0,
+            grid_size_y: 0.0,
+            grid_color: None,
+            guide_color: None,
             guides: Vec::new(),
             overlays: Vec::new(),
             wheel_mode: WheelMode::Pan,
             pan_tool: false,
             cursor: None,
             show_stage_border: true,
+            texture_margin: 0.0,
         }
+    }
+
+    /// The stage rectangle the texture covers: the document, grown by [`Self::texture_margin`].
+    #[must_use]
+    pub fn texture_rect(&self) -> Rect {
+        let grow = self.doc_size * self.texture_margin.max(0.0);
+        Rect::from_min_size(Pos2::ZERO - grow, self.doc_size + grow * 2.0)
     }
 
     /// The pixel size a texture should have to show the document 1:1 on screen at `pixels_per_point`.
@@ -98,7 +124,8 @@ impl StageViewState {
     pub fn desired_texture_size(&self, pixels_per_point: f32) -> [u32; 2] {
         let scale = self.view.zoom * pixels_per_point;
         let clamp = |v: f32| crate::util::ceil_u32((v * scale).clamp(1.0, 8192.0));
-        [clamp(self.doc_size.x), clamp(self.doc_size.y)]
+        let size = self.texture_rect().size();
+        [clamp(size.x), clamp(size.y)]
     }
 }
 
@@ -390,7 +417,8 @@ fn paint_canvas(
         inner.rect_filled(doc.translate(vec2(3.0, 3.0)), 0.0, Color32::from_black_alpha(70));
         inner.rect_filled(doc, 0.0, state.stage_color);
         if let Some(tex) = texture {
-            inner.image(tex.id(), doc, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            let target = frame.view.rect_to_screen(frame.canvas, state.texture_rect());
+            inner.image(tex.id(), target, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
     }
     if state.show_grid {
@@ -402,7 +430,7 @@ fn paint_canvas(
     if state.show_guides {
         let dragged: Vec<Guide> = preview_a.iter().chain(preview_b).copied().collect();
         for guide in state.guides.iter().chain(dragged.iter()) {
-            paint_guide(&inner, frame, *guide);
+            paint_guide(&inner, frame, *guide, state.guide_color);
         }
     }
     for overlay in &state.overlays {
@@ -413,8 +441,8 @@ fn paint_canvas(
     }
 }
 
-fn paint_guide(painter: &Painter, frame: &Frame, guide: Guide) {
-    let stroke = Stroke::new(1.0, frame.palette.guide);
+fn paint_guide(painter: &Painter, frame: &Frame, guide: Guide, color: Option<Color32>) {
+    let stroke = Stroke::new(1.0, color.unwrap_or(frame.palette.guide));
     match guide.axis {
         Axis::Horizontal => {
             let y = frame.view.to_screen(frame.canvas, pos2(0.0, guide.pos)).y;
@@ -431,30 +459,34 @@ fn paint_grid(painter: &Painter, state: &StageViewState, frame: &Frame, doc: Rec
     if !state.grid_size.is_finite() || state.grid_size <= 0.0 || !doc.is_positive() {
         return;
     }
-    let mut step = state.grid_size;
-    let mut guard = 0u8;
-    while step * frame.view.zoom < 6.0 && guard < 24 {
-        step *= 2.0;
-        guard = guard.saturating_add(1);
-    }
+    let widen = |mut step: f32| {
+        let mut guard = 0u8;
+        while step * frame.view.zoom < 6.0 && guard < 24 {
+            step *= 2.0;
+            guard = guard.saturating_add(1);
+        }
+        step
+    };
+    let step_x = widen(state.grid_size);
+    let step_y = widen(if state.grid_size_y > 0.0 { state.grid_size_y } else { state.grid_size });
     let visible = frame.view.visible_stage_rect(frame.canvas).intersect(Rect::from_min_size(Pos2::ZERO, state.doc_size));
     if !visible.is_positive() {
         return;
     }
-    let stroke = Stroke::new(1.0, frame.palette.grid_line_strong.gamma_multiply(0.8));
-    let mut x = (visible.left() / step).ceil() * step;
+    let stroke = Stroke::new(1.0, state.grid_color.unwrap_or_else(|| frame.palette.grid_line_strong.gamma_multiply(0.8)));
+    let mut x = (visible.left() / step_x).ceil() * step_x;
     let mut count = 0usize;
     while x <= visible.right() && count < 2000 {
         let sx = frame.view.to_screen(frame.canvas, pos2(x, 0.0)).x;
         painter.vline(sx, doc.y_range(), stroke);
-        x += step;
+        x += step_x;
         count = count.saturating_add(1);
     }
-    let mut y = (visible.top() / step).ceil() * step;
+    let mut y = (visible.top() / step_y).ceil() * step_y;
     while y <= visible.bottom() && count < 4000 {
         let sy = frame.view.to_screen(frame.canvas, pos2(0.0, y)).y;
         painter.hline(doc.x_range(), sy, stroke);
-        y += step;
+        y += step_y;
         count = count.saturating_add(1);
     }
 }
@@ -507,6 +539,17 @@ fn paint_rulers(painter: &Painter, state: &StageViewState, frame: &Frame, hover:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pasteboard_margin_grows_the_texture_on_every_side() {
+        let mut s = StageViewState::new(vec2(100.0, 50.0));
+        s.texture_margin = 0.5;
+        let r = s.texture_rect();
+        assert_eq!((r.min, r.max), (pos2(-50.0, -25.0), pos2(150.0, 75.0)));
+        assert_eq!(s.desired_texture_size(1.0), [200, 100]);
+        s.texture_margin = 0.0;
+        assert_eq!(s.texture_rect(), Rect::from_min_size(Pos2::ZERO, vec2(100.0, 50.0)));
+    }
 
     #[test]
     fn desired_texture_size_follows_zoom() {
