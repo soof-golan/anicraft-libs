@@ -189,7 +189,7 @@ impl Ctx<'_> {
 /// the mask's own samples where they overlap it, its default value elsewhere.
 fn mask_row(mask: &GrayImage, left: i64, top: i64, y: usize, row: &mut [u8]) {
     row.fill(mask.default_value);
-    let copy = || -> Option<()> {
+    let mut copy = || -> Option<()> {
         let my = usize::try_from(top.checked_add(i64::try_from(y).ok()?)?.checked_sub(i64::from(mask.top))?).ok()?;
         if my >= num::u32_to_usize(mask.height) {
             return None;
