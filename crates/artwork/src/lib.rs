@@ -24,6 +24,7 @@ mod psd;
 mod raster;
 mod svg;
 mod tree;
+mod vmask;
 
 pub use ai::import_ai;
 pub use display::{node_to_display, to_display};

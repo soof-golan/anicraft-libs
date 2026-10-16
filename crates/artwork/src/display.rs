@@ -3,7 +3,7 @@
 use anim_core::{Affine, BlendMode, ColorTransform, Rgba8};
 use anim_display::{Bitmap, DisplayList, Group, ImageStore, Node};
 
-use crate::tree::{ArtKind, ArtMask, ArtNode, ArtworkTree};
+use crate::tree::{ArtKind, ArtMask, ArtNode, ArtworkTree, blends_backdrop};
 
 /// Deepest nesting converted; a hand-built tree deeper than this is cut off rather than overflowing the stack.
 const MAX_DEPTH: usize = 256;
@@ -64,19 +64,26 @@ fn children_to_nodes(children: &[ArtNode], store: &mut ImageStore, depth: usize)
             out.extend(convert(base, store, depth));
             continue;
         }
-        let Some(base_node) = convert(base, store, depth) else {
+        // The base as it is on its own is the clip shape: its opacity and blend mode belong to the whole clipping
+        // group, so they don't shrink or move the shape.
+        let mut plain = base.clone();
+        plain.opacity = 1.0;
+        plain.blend = BlendMode::Normal;
+        let Some(base_node) = convert(&plain, store, depth) else {
             // A hidden base hides what is clipped to it.
             continue;
         };
-        // The clip shape is the base as it is on its own: layer opacity and blend mode don't shrink or move it.
-        let mut shape = base.clone();
-        shape.opacity = 1.0;
-        shape.blend = BlendMode::Normal;
-        shape.clipping = false;
-        let clip_nodes: Vec<Node> = convert(&shape, store, depth).into_iter().collect();
         let content: Vec<Node> = clipped.iter().filter_map(|c| convert(c, store, depth)).collect();
+        // Clipped layers blend with the base inside the group, not with what is under it.
+        let blend = if matches!(base.blend, BlendMode::Normal | BlendMode::PassThrough) && blends_backdrop(clipped.iter().copied()) {
+            BlendMode::Layer
+        } else {
+            base.blend
+        };
         out.push(Node::Group(Group {
-            children: vec![base_node, Node::Group(Group { mask: Some(clip_nodes), children: content, ..Group::default() })],
+            color: ColorTransform::alpha(base.opacity.clamp(0.0, 1.0)),
+            blend,
+            children: vec![base_node.clone(), Node::Group(Group { mask: Some(vec![base_node]), children: content, ..Group::default() })],
             ..Group::default()
         }));
     }

@@ -5,7 +5,8 @@ use anim_display::Image;
 use photocraft_psd::{BlendMode as PsdBlend, GrayImage, LayerNode, LayerRecord, PsdFile};
 
 use crate::raster::{apply_mask, premultiply};
-use crate::tree::{ArtKind, ArtMask, ArtNode, ArtworkTree};
+use crate::tree::{ArtKind, ArtMask, ArtNode, ArtworkTree, blends_backdrop};
+use crate::vmask::vector_mask;
 use crate::{ArtworkError, Limits, check_input};
 
 /// Imports a Photoshop document or large document.
@@ -54,15 +55,28 @@ impl Ctx<'_> {
                     let kind = self.raster_kind(*index);
                     let mut art = common(layer.record, kind);
                     art.opacity *= f32::from(layer.record.fill_opacity()) / 255.0;
+                    // The pixel mask is baked into the pixels by `raster_kind`; the vector mask clips them.
+                    art.mask = vector_mask(layer.record, self.size, &mut self.warnings);
                     out.push(art);
-                    // Pixels are masked in `raster_kind`.
                 }
                 LayerNode::Group { index, children, .. } => {
                     let mut kids = Vec::new();
                     self.build(children, &mut kids)?;
                     let Some(layer) = self.file.layer(*index) else { continue };
                     let mut art = common(layer.record, ArtKind::Group(kids));
-                    art.mask = self.group_mask(*index);
+                    let pixel_mask = self.group_mask(*index);
+                    let shape_mask = vector_mask(layer.record, self.size, &mut self.warnings);
+                    if pixel_mask.is_some() && shape_mask.is_some() {
+                        self.warn(&art.name, "has a pixel mask and a vector mask; only the pixel mask is used");
+                    }
+                    art.mask = pixel_mask.or(shape_mask);
+                    // A Normal group is isolated in Photoshop: what is inside blends with the group, not the canvas.
+                    if art.blend == BlendMode::Normal && blends_backdrop(art.children()) {
+                        art.blend = BlendMode::Layer;
+                    }
+                    if art.blend == BlendMode::PassThrough && art.opacity < 1.0 && blends_backdrop(art.children()) {
+                        self.warn(&art.name, "a pass through group below full opacity is drawn isolated; blend modes inside see only the group");
+                    }
                     out.push(art);
                 }
             }
@@ -140,6 +154,11 @@ impl Ctx<'_> {
                 return None;
             }
         };
+        // An empty rectangle with a zero background hides the whole group.
+        if mask.default_value == 0 && (mask.width == 0 || mask.height == 0) {
+            let image = Image::new(1, 1, vec![0; 4]).ok()?;
+            return Some(ArtMask::Raster { image, offset: Point::ORIGIN });
+        }
         // Outside its rectangle the mask has a constant value; when that is not zero it needs the whole canvas.
         let (left, top, width, height) = if mask.default_value == 0 {
             (mask.left, mask.top, mask.width, mask.height)

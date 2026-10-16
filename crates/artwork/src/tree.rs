@@ -56,6 +56,16 @@ pub enum ArtMask {
     Vector { nodes: Vec<Node> },
 }
 
+/// Whether anything in these siblings blends with what is below them, so that a group around them either lets
+/// them see the canvas (pass through) or isolates them.
+pub fn blends_backdrop<'a>(nodes: impl IntoIterator<Item = &'a ArtNode>) -> bool {
+    nodes.into_iter().any(|n| match n.blend {
+        BlendMode::Normal | BlendMode::Layer => false,
+        BlendMode::PassThrough => blends_backdrop(n.children()),
+        _ => true,
+    })
+}
+
 impl ArtNode {
     fn with_kind(name: impl Into<String>, kind: ArtKind) -> Self {
         Self { name: name.into(), visible: true, opacity: 1.0, blend: BlendMode::Normal, clipping: false, mask: None, kind }
