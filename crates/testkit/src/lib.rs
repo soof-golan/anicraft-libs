@@ -139,6 +139,21 @@ pub fn save_for_looking(dir: &Path, name: &str, width: u32, height: u32, rgba: &
     }
 }
 
+/// The text entries of a zipped FLA (or an XFL folder) whose names `keep` accepts, as `(name, lossy UTF-8 text)`.
+///
+/// Reads through `anim-archive`, which copes with the 54 bytes short central directory Animate writes.
+///
+/// # Errors
+/// The archive error when the container cannot be opened or an accepted entry cannot be read.
+pub fn archive_texts(path: &Path, keep: impl Fn(&str) -> bool) -> Result<Vec<(String, String)>, anim_archive::ArchiveError> {
+    let container = anim_archive::Container::open(path)?;
+    let mut out = Vec::new();
+    for entry in container.files().filter(|entry| keep(&entry.name)) {
+        out.push((entry.name.clone(), String::from_utf8_lossy(&container.read_entry(entry)?).into_owned()));
+    }
+    Ok(out)
+}
+
 /// The largest per-channel difference between two equally sized buffers (255 when the sizes differ).
 #[must_use]
 pub fn max_channel_diff(a: &[u8], b: &[u8]) -> u8 {

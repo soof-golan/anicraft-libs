@@ -19,7 +19,6 @@
     reason = "throwaway test tooling over trusted local samples"
 )]
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anim_core::kurbo::PathEl;
@@ -29,33 +28,8 @@ use anim_shape::{BitmapFill, EdgeShape, FillStyle, GradientFill, GradientStop, N
 use tiny_skia::{Color, FillRule, LineCap, LineJoin, PathBuilder, Pixmap, Shader, SpreadMode, Transform};
 
 fn local_entries(path: &Path) -> Vec<(String, String)> {
-    let bytes = std::fs::read(path).expect("sample readable");
-    let le16 = |at: usize| usize::from(u16::from_le_bytes([bytes[at], bytes[at + 1]]));
-    let le32 = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]) as usize;
-    let mut out = Vec::new();
-    let mut pos = 0;
-    while bytes.get(pos..pos + 4) == Some(&[0x50, 0x4B, 0x03, 0x04]) {
-        let method = le16(pos + 8);
-        let compressed = le32(pos + 18);
-        let (name_len, extra_len) = (le16(pos + 26), le16(pos + 28));
-        let name = String::from_utf8_lossy(&bytes[pos + 30..pos + 30 + name_len]).into_owned();
-        let start = pos + 30 + name_len + extra_len;
-        pos = start + compressed;
-        let is_xml = Path::new(&name).extension().is_some_and(|e| e.eq_ignore_ascii_case("xml"));
-        if !is_xml || !name.starts_with("LIBRARY/") {
-            continue;
-        }
-        let data = &bytes[start..pos];
-        let text = if method == 8 {
-            let mut inflated = Vec::new();
-            flate2::read::DeflateDecoder::new(data).read_to_end(&mut inflated).expect("inflate");
-            inflated
-        } else {
-            data.to_vec()
-        };
-        out.push((name, String::from_utf8_lossy(&text).into_owned()));
-    }
-    out
+    anim_testkit::archive_texts(path, |name| Path::new(name).extension().is_some_and(|e| e.eq_ignore_ascii_case("xml")) && name.starts_with("LIBRARY/"))
+        .expect("sample readable")
 }
 
 fn child<'a, 'i>(node: roxmltree::Node<'a, 'i>, name: &str) -> Option<roxmltree::Node<'a, 'i>> {

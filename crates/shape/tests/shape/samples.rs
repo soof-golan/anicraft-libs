@@ -14,7 +14,6 @@
     reason = "test code over trusted local samples"
 )]
 
-use std::io::Read;
 use std::path::PathBuf;
 
 use anim_core::kurbo::PathEl;
@@ -25,49 +24,13 @@ fn samples_dir() -> Option<PathBuf> {
     std::env::var_os("ANICRAFT_SAMPLES").map(PathBuf::from)
 }
 
-fn le16(bytes: &[u8], at: usize) -> Option<usize> {
-    let b = bytes.get(at..at + 2)?;
-    Some(usize::from(u16::from_le_bytes([b[0], b[1]])))
-}
-
-fn le32(bytes: &[u8], at: usize) -> Option<usize> {
-    let b = bytes.get(at..at + 4)?;
-    usize::try_from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok()
-}
-
-/// The XML entries of a zip, read by walking local file headers. Large media entries are skipped.
+/// The XML entries of a zip. Large media entries are skipped.
 fn xml_entries(path: &std::path::Path) -> Vec<(String, String)> {
-    let bytes = std::fs::read(path).expect("sample readable");
-    let mut out = Vec::new();
-    let mut pos = 0;
-    while bytes.get(pos..pos + 4) == Some(&[0x50, 0x4B, 0x03, 0x04]) {
-        let flags = le16(&bytes, pos + 6).unwrap();
-        let method = le16(&bytes, pos + 8).unwrap();
-        let compressed = le32(&bytes, pos + 18).unwrap();
-        let name_len = le16(&bytes, pos + 26).unwrap();
-        let extra_len = le16(&bytes, pos + 28).unwrap();
-        assert_eq!(flags & 8, 0, "data descriptors are not used by these samples");
-        let name = String::from_utf8_lossy(bytes.get(pos + 30..pos + 30 + name_len).unwrap()).into_owned();
-        let data_start = pos + 30 + name_len + extra_len;
-        let data = bytes.get(data_start..data_start + compressed).unwrap();
-        pos = data_start + compressed;
-        let is_xml = std::path::Path::new(&name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
-        let wanted = is_xml && !name.starts_with("META-INF") && !name.starts_with("Publish");
-        if !wanted {
-            continue;
-        }
-        let text = match method {
-            0 => data.to_vec(),
-            8 => {
-                let mut inflated = Vec::new();
-                flate2::read::DeflateDecoder::new(data).read_to_end(&mut inflated).expect("inflate");
-                inflated
-            }
-            other => panic!("unsupported compression method {other}"),
-        };
-        out.push((name, String::from_utf8_lossy(&text).into_owned()));
-    }
-    out
+    anim_testkit::archive_texts(path, |name| {
+        let is_xml = std::path::Path::new(name).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("xml"));
+        is_xml && !name.starts_with("META-INF") && !name.starts_with("Publish")
+    })
+    .expect("sample readable")
 }
 
 fn unescape(value: &str) -> String {

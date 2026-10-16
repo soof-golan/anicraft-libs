@@ -19,7 +19,6 @@
 )]
 
 use std::hint::black_box;
-use std::io::Read;
 use std::path::Path;
 
 use anim_core::Point;
@@ -84,38 +83,10 @@ fn nodes_checksum(shape: &EdgeShape) -> u64 {
     h
 }
 
-fn le(bytes: &[u8], at: usize, len: usize) -> Option<usize> {
-    let b = bytes.get(at..at + len)?;
-    Some(b.iter().rev().fold(0_usize, |acc, x| (acc << 8) | usize::from(*x)))
-}
-
-/// The XML entries of a FLA, read by walking local file headers (the central directory of these samples is damaged).
+/// The XML entries of a FLA (the central directory of these samples is damaged; anim-archive copes).
 fn xml_entries(path: &Path) -> Vec<String> {
-    let bytes = std::fs::read(path).expect("sample readable");
-    let mut out = Vec::new();
-    let mut pos = 0;
-    while bytes.get(pos..pos + 4) == Some(&[0x50, 0x4B, 0x03, 0x04]) {
-        let method = le(&bytes, pos + 8, 2).unwrap();
-        let compressed = le(&bytes, pos + 18, 4).unwrap();
-        let name_len = le(&bytes, pos + 26, 2).unwrap();
-        let extra_len = le(&bytes, pos + 28, 2).unwrap();
-        let name = String::from_utf8_lossy(bytes.get(pos + 30..pos + 30 + name_len).unwrap()).into_owned();
-        let start = pos + 30 + name_len + extra_len;
-        let data = bytes.get(start..start + compressed).unwrap();
-        pos = start + compressed;
-        if !name.to_ascii_lowercase().ends_with(".xml") || name.starts_with("META-INF") || name.starts_with("Publish") {
-            continue;
-        }
-        let text = if method == 8 {
-            let mut inflated = Vec::new();
-            flate2::read::DeflateDecoder::new(data).read_to_end(&mut inflated).expect("inflate");
-            inflated
-        } else {
-            data.to_vec()
-        };
-        out.push(String::from_utf8_lossy(&text).into_owned());
-    }
-    out
+    let keep = |name: &str| name.to_ascii_lowercase().ends_with(".xml") && !name.starts_with("META-INF") && !name.starts_with("Publish");
+    anim_testkit::archive_texts(path, keep).expect("sample readable").into_iter().map(|(_, text)| text).collect()
 }
 
 /// Every `<DOMShape>` of the sample FLAs as its `<Edge>` attributes.

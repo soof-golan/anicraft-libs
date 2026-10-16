@@ -23,6 +23,9 @@ impl<'a> Cursor<'a> {
     }
 
     /// Consumes `n` bytes.
+    ///
+    /// # Errors
+    /// Truncated when fewer than `n` bytes remain.
     pub fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(n).ok_or_else(ArchiveError::truncated)?;
         let out = self.data.get(self.pos..end).ok_or_else(ArchiveError::truncated)?;
@@ -31,6 +34,9 @@ impl<'a> Cursor<'a> {
     }
 
     /// Skips `n` bytes.
+    ///
+    /// # Errors
+    /// Truncated when fewer than `n` bytes remain.
     pub fn skip(&mut self, n: usize) -> Result<()> {
         self.take(n).map(|_| ())
     }
@@ -41,16 +47,25 @@ impl<'a> Cursor<'a> {
     }
 
     /// A little-endian `u16`.
+    ///
+    /// # Errors
+    /// Truncated when fewer than 2 bytes remain.
     pub fn u16(&mut self) -> Result<u16> {
         Ok(u16::from_le_bytes(self.array()?))
     }
 
     /// A little-endian `u32`.
+    ///
+    /// # Errors
+    /// Truncated when fewer than 4 bytes remain.
     pub fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_le_bytes(self.array()?))
     }
 
     /// A little-endian `u64`.
+    ///
+    /// # Errors
+    /// Truncated when fewer than 8 bytes remain.
     pub fn u64(&mut self) -> Result<u64> {
         Ok(u64::from_le_bytes(self.array()?))
     }

@@ -50,7 +50,7 @@
 //! Every archive is treated as hostile: [`Limits`] caps the entry count, per-entry and total size, expansion ratio
 //! and name length; offsets are checked; overlapping entries are rejected; nothing here panics on malformed input.
 
-mod bytes;
+pub mod bytes;
 mod container;
 mod dir;
 pub mod encoding;
