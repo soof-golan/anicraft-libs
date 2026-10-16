@@ -266,6 +266,17 @@ fn render_benches(c: &mut Criterion) {
             eprintln!("checksum {name} {:016x}", checksum(&first));
             renderer.recycle(first);
         }
+        // BENCH_FIXED=<renders> BENCH_ONLY=<scene>: a fixed amount of work for `perf stat`, which counts cycles and
+        // instructions and so is steadier than wall time on a busy machine.
+        if let Some(count) = std::env::var("BENCH_FIXED").ok().and_then(|v| v.parse::<u32>().ok()) {
+            if std::env::var("BENCH_ONLY").is_ok_and(|only| name.contains(only.as_str())) {
+                for _ in 0..count {
+                    let image = renderer.render(black_box(&scene.list), &scene.images, &scene.options).unwrap();
+                    renderer.recycle(black_box(image));
+                }
+            }
+            continue;
+        }
         group.bench_function(*name, |b| {
             b.iter(|| {
                 let image = renderer.render(black_box(&scene.list), &scene.images, &scene.options).unwrap();

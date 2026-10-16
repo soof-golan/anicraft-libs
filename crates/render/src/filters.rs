@@ -142,81 +142,76 @@ const fn trunc_to_i32(v: f64) -> i32 {
     v as i32
 }
 
-/// Box-filters one row of `C`-channel pixels in place.
-fn box_row<const C: usize>(row: &mut [f32], scratch: &mut RowScratch, width: f64, shift: f64) {
-    let count = row.len().checked_div(C).unwrap_or(0);
+/// Box-filters one row of a single-channel plane in place.
+fn box_row(row: &mut [f32], scratch: &mut RowScratch, width: f64, shift: f64) {
+    let count = row.len();
     scratch.original.clear();
     scratch.original.extend_from_slice(row);
     scratch.prefix.clear();
-    scratch.prefix.extend_from_slice(&[0.0; C]);
-    let mut running = [0.0_f64; C];
-    for px in row.as_chunks::<C>().0 {
-        for (sum, value) in running.iter_mut().zip(px) {
-            *sum += f64::from(*value);
-        }
-        scratch.prefix.extend_from_slice(&running);
+    scratch.prefix.push(0.0);
+    let mut running = 0.0_f64;
+    for value in row.iter() {
+        running += f64::from(*value);
+        scratch.prefix.push(running);
     }
     let count_f = usize_to_f64(count);
     let half = width / 2.0;
-    // The integral of the piecewise-constant signal from 0 to `t`, for one channel.
-    let cumulative = |t: f64, channel: usize| -> f64 {
+    let (prefix, original) = (&scratch.prefix, &scratch.original);
+    let total = prefix.get(count).copied().unwrap_or(0.0);
+    // The integral of the piecewise-constant signal from 0 to `t`.
+    let cumulative = |t: f64| -> f64 {
         if t <= 0.0 {
             return 0.0;
         }
         if t >= count_f {
-            return scratch.prefix.get(count.saturating_mul(C).saturating_add(channel)).copied().unwrap_or(0.0);
+            return total;
         }
         // `t` is positive here, so truncating is flooring, without the library call `floor` costs on baseline x86.
         let cell = trunc_to_i32(t);
-        let base = f64::from(cell);
-        let index = usize::try_from(cell).unwrap_or(0).saturating_mul(C).saturating_add(channel);
-        let whole = scratch.prefix.get(index).copied().unwrap_or(0.0);
-        let part = scratch.original.get(index).copied().map_or(0.0, f64::from);
-        (t - base).mul_add(part, whole)
+        let index = usize::try_from(cell).unwrap_or(0);
+        let whole = prefix.get(index).copied().unwrap_or(0.0);
+        let part = original.get(index).copied().map_or(0.0, f64::from);
+        (t - f64::from(cell)).mul_add(part, whole)
     };
-    for (i, out) in row.as_chunks_mut::<C>().0.iter_mut().enumerate() {
+    for (i, out) in row.iter_mut().enumerate() {
         let centre = usize_to_f64(i) + 0.5 - shift;
-        let (high, low) = (centre + half, centre - half);
-        for (channel, value) in out.iter_mut().enumerate() {
-            *value = f64_to_f32((cumulative(high, channel) - cumulative(low, channel)) / width);
-        }
+        *out = f64_to_f32((cumulative(centre + half) - cumulative(centre - half)) / width);
     }
 }
 
-/// Swaps rows and columns of a `width` x `height` image of `C`-channel pixels.
-fn transpose<const C: usize>(src: &[f32], width: usize, height: usize) -> Vec<f32> {
+/// Swaps rows and columns of a `width` x `height` plane.
+fn transpose(src: &[f32], width: usize, height: usize) -> Vec<f32> {
     let mut out = vec![0.0_f32; src.len()];
     if width == 0 {
         return out;
     }
-    for (y, row) in src.chunks_exact(width.saturating_mul(C)).enumerate() {
-        for (x, px) in row.as_chunks::<C>().0.iter().enumerate() {
-            let at = x.saturating_mul(height).saturating_add(y).saturating_mul(C);
-            if let Some(target) = out.get_mut(at..at.saturating_add(C)) {
-                target.copy_from_slice(px);
+    for (y, row) in src.chunks_exact(width).enumerate() {
+        for (x, value) in row.iter().enumerate() {
+            if let Some(target) = out.get_mut(x.saturating_mul(height).saturating_add(y)) {
+                *target = *value;
             }
         }
     }
     out
 }
 
-fn run_rows<const C: usize>(data: &mut [f32], row_pixels: usize, axis: Axis, passes: u8) {
+fn run_rows(data: &mut [f32], row_pixels: usize, axis: Axis, passes: u8) {
     let width = axis.effective_width();
     for pass in 0..passes {
         let shift = if pass == 0 { axis.shift } else { 0.0 };
-        par::for_each_row_with(data, row_pixels.saturating_mul(C), RowScratch::default, |scratch, _, row| box_row::<C>(row, scratch, width, shift));
+        par::for_each_row_with(data, row_pixels, RowScratch::default, |scratch, _, row| box_row(row, scratch, width, shift));
     }
 }
 
-/// Blurs a `width` x `height` image of `C`-channel pixels with the given horizontal and vertical box.
-fn blur<const C: usize>(data: &mut Vec<f32>, width: usize, height: usize, horizontal: Axis, vertical: Axis, passes: u8) {
+/// Blurs a `width` x `height` plane with the given horizontal and vertical box.
+fn blur(data: &mut Vec<f32>, width: usize, height: usize, horizontal: Axis, vertical: Axis, passes: u8) {
     if !horizontal.is_noop() {
-        run_rows::<C>(data, width, horizontal, passes);
+        run_rows(data, width, horizontal, passes);
     }
     if !vertical.is_noop() {
-        let mut columns = transpose::<C>(data, width, height);
-        run_rows::<C>(&mut columns, height, vertical, passes);
-        *data = transpose::<C>(&columns, height, width);
+        let mut columns = transpose(data, width, height);
+        run_rows(&mut columns, height, vertical, passes);
+        *data = transpose(&columns, height, width);
     }
 }
 
@@ -239,7 +234,7 @@ fn blur_rgba(layer: &mut Layer, wx: f64, wy: f64, passes: u8) {
     }
     for channel in [3, 0, 1, 2] {
         let mut plane = channel_plane(layer, channel);
-        blur::<1>(&mut plane, width, height, horizontal, vertical, passes);
+        blur(&mut plane, width, height, horizontal, vertical, passes);
         for (px, value) in layer.pm.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(&plane) {
             let blurred = anim_core::num::unit_f32_to_u8(*value);
             let alpha = px[3];
@@ -263,7 +258,7 @@ struct Look {
 fn shadow(layer: &mut Layer, look: &Look, horizontal: Axis, vertical: Axis) {
     let (width, height) = dimensions(layer);
     let mut plane = channel_plane(layer, 3);
-    blur::<1>(&mut plane, width, height, horizontal, vertical, SHADOW_PASSES);
+    blur(&mut plane, width, height, horizontal, vertical, SHADOW_PASSES);
     let strength = f64_to_f32(look.strength.clamp(0.0, 255.0));
     let rgb = [unit(look.color.r), unit(look.color.g), unit(look.color.b)];
     let color_alpha = unit(look.color.a);
@@ -370,7 +365,7 @@ mod tests {
     fn fractional_box_width_is_a_weighted_mean() {
         let mut row = vec![0.0, 0.0, 1.0, 0.0, 0.0];
         let mut scratch = RowScratch::default();
-        box_row::<1>(&mut row, &mut scratch, 2.5, 0.0);
+        box_row(&mut row, &mut scratch, 2.5, 0.0);
         // Window of 2.5 around pixel 2 covers it fully (1/2.5); its neighbours see 0.75 of it (0.75/2.5).
         for (got, want) in row.iter().zip([0.0_f32, 0.3, 0.4, 0.3, 0.0]) {
             assert!((got - want).abs() < 1e-5, "{row:?}");
@@ -381,7 +376,7 @@ mod tests {
     fn sub_pixel_shift_interpolates() {
         let mut row = vec![0.0, 1.0, 0.0, 0.0];
         let mut scratch = RowScratch::default();
-        box_row::<1>(&mut row, &mut scratch, 1.0, 0.5);
+        box_row(&mut row, &mut scratch, 1.0, 0.5);
         assert!((row[1] - 0.5).abs() < 1e-6 && (row[2] - 0.5).abs() < 1e-6 && row[0].abs() < 1e-6, "{row:?}");
     }
 
