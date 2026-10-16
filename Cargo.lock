@@ -184,6 +184,7 @@ dependencies = [
  "anim-core",
  "anim-display",
  "anim-render",
+ "criterion",
  "image",
  "kurbo",
  "photocraft-psd",
