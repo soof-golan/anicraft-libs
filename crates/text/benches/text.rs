@@ -52,7 +52,8 @@ fn paragraph(text: &str, alignment: Alignment, direction: Direction) -> Paragrap
 fn document(count: usize, alignment: Alignment) -> RichText {
     let texts = [HEBREW, ARABIC, LATIN, NIQQUD];
     let direction = [Direction::Auto, Direction::Rtl, Direction::Ltr];
-    RichText::new((0..count).map(|i| paragraph(texts[i % texts.len()], alignment, direction[i % direction.len()])).collect())
+    // A number at the end makes every paragraph different, so nothing repeats inside a document.
+    RichText::new((0..count).map(|i| paragraph(&format!("{} {i}", texts[i % texts.len()]), alignment, direction[i % direction.len()])).collect())
 }
 
 fn checksum(layout: &TextLayout) -> u64 {
@@ -103,6 +104,14 @@ fn layout_benches(c: &mut Criterion) {
             keys += 1;
             typed.paragraphs[100].runs[0].text = format!("{base}{}", char::from_u32(0x5d0 + keys % 27).unwrap());
             black_box(engine.layout(black_box(&typed), Some(400.0)))
+        });
+    });
+
+    // Nothing cached: the first layout of a document (setting the language drops the shaping cache).
+    group.bench_function("doc-200-cold", |b| {
+        b.iter(|| {
+            engine.set_language(None);
+            black_box(engine.layout(black_box(&doc), Some(400.0)))
         });
     });
 
