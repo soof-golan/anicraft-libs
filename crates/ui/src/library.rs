@@ -222,9 +222,9 @@ fn preview(ui: &mut Ui, model: &LibraryModel) -> Vec<LibraryEvent> {
     if pv.playable {
         let bar = Rect::from_min_max(pos2(rect.left() + 6.0, rect.bottom() - controls - caption_h), pos2(rect.right() - 6.0, rect.bottom() - caption_h - 2.0));
         let button = Rect::from_min_size(bar.min, vec2(bar.height(), bar.height()));
-        let icon = if pv.playing { Icon::Pause } else { Icon::Play };
+        let icon = if pv.playing { Icon::Stop } else { Icon::Play };
         let clicked = ui
-            .put(button, |ui: &mut Ui| crate::widgets::icon_button(ui, button.size(), icon, pv.playing, true, if pv.playing { "Pause" } else { "Play" }))
+            .put(button, |ui: &mut Ui| crate::widgets::icon_button(ui, button.size(), icon, pv.playing, true, if pv.playing { "Stop" } else { "Play" }))
             .clicked();
         if clicked {
             events.push(if pv.playing { LibraryEvent::PreviewStop } else { LibraryEvent::PreviewPlay });
