@@ -87,6 +87,16 @@ fn timeline_scrubbing_the_ruler_sets_the_frame() {
 }
 
 #[test]
+fn timeline_scrolls_to_a_playhead_that_jumps_out_of_view_while_stopped() {
+    let mut h = timeline_harness();
+    h.run();
+    assert!(h.state().view.scroll_x.abs() < 1e-6);
+    h.state_mut().model.current_frame = 1200;
+    h.run();
+    assert!(h.state().view.scroll_x > 1000.0, "scroll_x {}", h.state().view.scroll_x);
+}
+
+#[test]
 fn timeline_click_selects_a_cell_and_moves_the_playhead() {
     let mut h = timeline_harness();
     h.run();

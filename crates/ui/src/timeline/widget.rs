@@ -114,7 +114,15 @@ pub fn timeline(ui: &mut Ui, model: &TimelineModel, view: &TimelineViewState) ->
 
     // Keep the playhead in view during playback.
     let mut view_local = view.clone();
-    if model.playing
+    // Also reveal it when the current frame changed since the last paint (goto, opening a file, stepping), not
+    // only while playing.
+    let moved = ui.data_mut(|d| {
+        let slot = d.get_temp_mut_or::<Option<u32>>(id.with("last-frame"), None);
+        let moved = *slot != Some(model.current_frame);
+        *slot = Some(model.current_frame);
+        moved
+    });
+    if (model.playing || moved)
         && view.follow_playhead
         && let Some(x) = layout.geo.scroll_to_reveal(model.current_frame)
     {
