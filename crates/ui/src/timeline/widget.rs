@@ -43,9 +43,11 @@ pub fn ruler_label(frame: u32, step: u32) -> Option<String> {
     labelled.then(|| n.to_string())
 }
 
-/// Animate's frame keyboard shortcuts as events: F5 insert frame, Shift+F5 remove frames, F6 insert keyframe,
-/// Shift+F6 clear keyframe, F7 insert blank keyframe, Ctrl/Cmd+Alt+C/X/V cut, copy and paste frames (with Shift
-/// paste and overwrite), Alt+Backspace clear frames and Ctrl/Cmd+Alt+A select all frames.
+/// Animate's frame keyboard shortcuts as events.
+///
+/// F5 insert frame, Shift+F5 remove frames, F6 insert keyframe, Shift+F6 clear keyframe, F7 insert blank keyframe,
+/// Ctrl/Cmd+Alt+C/X/V cut, copy and paste frames (with Shift paste and overwrite), Alt+Backspace clear frames and
+/// Ctrl/Cmd+Alt+A select all frames.
 ///
 /// Call it once per frame where the timeline has focus (it consumes the keys it handles).
 #[must_use = "the keys are consumed: apply the returned events"]
