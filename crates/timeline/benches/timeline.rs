@@ -242,6 +242,38 @@ fn guided() -> Document {
     d
 }
 
+/// A hundred layers with motion-object tweens, each holding three tracks of twenty keyframes.
+fn motion_objects() -> Document {
+    let mut d = document(Vec::new());
+    add_symbol(
+        &mut d,
+        "dot",
+        SymbolKind::Graphic,
+        vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -4.0, 8.0, 8.0), RED)])])],
+    );
+    let track = |id: &str, scale: f64| {
+        let keys: Vec<String> = (0..20).map(|i| format!(r#"<Keyframe timevalue="{}" value="{}"/>"#, i * 1000, f64::from(i) * scale)).collect();
+        let keys = keys.concat();
+        format!(r#"<Property id="{id}">{keys}</Property>"#)
+    };
+    let xml = format!(
+        r#"<AnimationCore TimeScale="24000" duration="19000"><PropertyContainer id="Basic_Motion">{}{}{}</PropertyContainer></AnimationCore>"#,
+        track("Motion_X", 12.0),
+        track("Motion_Y", 7.0),
+        track("Rotation_Z", 18.0)
+    );
+    let layers = (0..100)
+        .map(|i| {
+            let mut frame = Frame::new(0, 30, vec![instance("dot", Affine::translate((f64::from(i) * 5.0, 100.0)))]);
+            frame.tween_type = TweenType::MotionObject;
+            frame.motion_object_xml = Some(xml.clone());
+            layer("motion", LayerKind::Normal, None, vec![frame])
+        })
+        .collect();
+    d.scenes[0].layers = layers;
+    d
+}
+
 fn checksum(lists: &[anim_display::DisplayList]) -> u64 {
     let mut h = DefaultHasher::new();
     format!("{lists:?}").hash(&mut h);
@@ -250,7 +282,8 @@ fn checksum(lists: &[anim_display::DisplayList]) -> u64 {
 
 fn bench(c: &mut Criterion) {
     let check = std::env::var_os("BENCH_CHECKSUM").is_some();
-    let docs: [(&str, Document, u32); 5] = [
+    let docs: [(&str, Document, u32); 6] = [
+        ("motion_objects_100", motion_objects(), 14),
         ("many_instances_1000", many_instances(), 29),
         ("nested_symbols_4pow6", nested_symbols(), 5),
         ("many_layers_masks_400", many_layers(), 14),

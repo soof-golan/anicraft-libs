@@ -111,6 +111,8 @@ pub struct Evaluator<'a> {
     shapes: HashMap<usize, Vec<Node>>,
     /// Motion guides by the address of the keyframe that holds them.
     guides: HashMap<usize, Option<Guide>>,
+    /// Motion-object tracks by the address of the keyframe that holds them.
+    motion: HashMap<usize, Option<MotionTracks>>,
     /// Layer trees by the address of their timeline, taken out while the timeline is being drawn.
     trees: HashMap<usize, Vec<LayerNode>>,
 }
@@ -136,6 +138,7 @@ impl<'a> Evaluator<'a> {
             plans: HashMap::new(),
             shapes: HashMap::new(),
             guides: HashMap::new(),
+            motion: HashMap::new(),
             trees: HashMap::new(),
         }
     }
@@ -214,6 +217,7 @@ impl<'a> Evaluator<'a> {
         self.plans.clear();
         self.shapes.clear();
         self.guides.clear();
+        self.motion.clear();
         self.trees.clear();
     }
 
@@ -387,7 +391,7 @@ impl<'a> Evaluator<'a> {
                 self.shape_tween(keyframe, next, std::ptr::from_ref(timeline).addr(), layer_index, frame)
             }
             TweenType::MotionObject => {
-                let Some(tracks) = keyframe.motion_object_xml.as_deref().and_then(MotionTracks::parse) else { return hold() };
+                let Some(tracks) = self.motion_tracks(keyframe) else { return hold() };
                 let steps = keyframe.duration.saturating_sub(1);
                 if steps == 0 {
                     return hold();
@@ -497,6 +501,15 @@ impl<'a> Evaluator<'a> {
             }
             Element::Unknown(_) => None,
         }
+    }
+
+    /// The property tracks of a motion-object keyframe, parsed once per evaluator; `None` when there are none.
+    fn motion_tracks(&mut self, frame: &'a Frame) -> Option<&MotionTracks> {
+        if self.motion.len() >= MAX_PLANS {
+            self.motion.clear();
+        }
+        let xml = frame.motion_object_xml.as_deref();
+        self.motion.entry(std::ptr::from_ref(frame).addr()).or_insert_with(|| xml.and_then(MotionTracks::parse)).as_ref()
     }
 
     /// The motion guide a keyframe holds, measured once per evaluator; `None` when it has no stroke.
