@@ -13,8 +13,8 @@ pub mod num;
 pub mod projective;
 
 pub use blend::BlendMode;
-pub use projective::{Homography, Matrix3D, Perspective, Transform3D};
 pub use color::{PremulRgba, Rgba8};
 pub use color_transform::ColorTransform;
 pub use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick, TimeRange};
 pub use kurbo::{self, Affine, BezPath, Point, Rect, Size, Vec2};
+pub use projective::{Homography, Matrix3D, Perspective, Transform3D};

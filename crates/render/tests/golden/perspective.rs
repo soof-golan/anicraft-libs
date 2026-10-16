@@ -25,7 +25,8 @@ fn a_square_turned_about_y_lands_on_the_predicted_quad() {
     let perspective = Perspective::for_stage(200.0, 200.0);
     let f = perspective.focal_length();
     let placement = Matrix3D::translation(-50.0, -50.0, 0.0).then(&Matrix3D::rotation_y(40.0)).then(&Matrix3D::translation(100.0, 100.0, 0.0));
-    let quad = [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)].map(|(x, y)| pinhole(placement.transform_point([x, y, 0.0]), f, perspective.vanishing_point));
+    let quad =
+        [(0.0, 0.0), (100.0, 0.0), (100.0, 100.0), (0.0, 100.0)].map(|(x, y)| pinhole(placement.transform_point([x, y, 0.0]), f, perspective.vanishing_point));
     // One edge is nearer the viewer, so it must be taller on screen than the other.
     let left = quad[0].distance(quad[3]);
     let right = quad[1].distance(quad[2]);
@@ -59,7 +60,11 @@ fn moving_back_in_z_shrinks_toward_the_vanishing_point() {
     let z = f; // twice the distance: half the size
     let placement = Matrix3D::translation(60.0, 60.0, z);
     let mut scene = Scene::new(200, 200);
-    scene.add(Node::Group(Group { projection: Some(placement.homography(&perspective)), children: vec![solid_rect(0.0, 0.0, 40.0, 40.0, BLUE)], ..Group::default() }));
+    scene.add(Node::Group(Group {
+        projection: Some(placement.homography(&perspective)),
+        children: vec![solid_rect(0.0, 0.0, 40.0, 40.0, BLUE)],
+        ..Group::default()
+    }));
     let img = scene.render();
     // (60,60)..(100,100) shrinks about (100,100) by one half: (80,80)..(100,100).
     assert_eq!(count(&img, |px| px == [0, 0, 255, 255]), 400);

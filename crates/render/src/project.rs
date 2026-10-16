@@ -97,7 +97,8 @@ fn source_bounds(cx: &Ctx<'_>, group: &Group, next: usize) -> Option<Rect> {
 /// Texels per source unit: the largest stretch the projection applies to the sides of `content`, limited so that the
 /// source stays within [`MAX_SOURCE_SIDE`] and never smaller than a texel per 16 units.
 fn source_scale(to_device: &Homography, content: Rect) -> f64 {
-    let corners = [Point::new(content.x0, content.y0), Point::new(content.x1, content.y0), Point::new(content.x1, content.y1), Point::new(content.x0, content.y1)];
+    let corners =
+        [Point::new(content.x0, content.y0), Point::new(content.x1, content.y0), Point::new(content.x1, content.y1), Point::new(content.x0, content.y1)];
     let mapped: Vec<Option<Point>> = corners.iter().map(|c| to_device.apply(*c)).collect();
     let mut stretch = 0.0_f64;
     for (i, (a, b)) in corners.iter().zip(corners.iter().cycle().skip(1)).enumerate() {
@@ -155,7 +156,13 @@ pub fn projected_bounds(h: &Homography, quad: [Point; 4]) -> Option<Rect> {
 fn warp_into(target: &mut Layer, source: &Layer, warp: &Homography, inverse: &Homography) {
     let width = u32_to_usize(target.rect.width());
     let (x0, y0) = (f64::from(target.rect.x0), f64::from(target.rect.y0));
-    let sampler = Sampler { data: source.pm.data(), width: u32_to_usize(source.rect.width()), height: u32_to_usize(source.rect.height()), x0: f64::from(source.rect.x0), y0: f64::from(source.rect.y0) };
+    let sampler = Sampler {
+        data: source.pm.data(),
+        width: u32_to_usize(source.rect.width()),
+        height: u32_to_usize(source.rect.height()),
+        x0: f64::from(source.rect.x0),
+        y0: f64::from(source.rect.y0),
+    };
     crate::par::for_each_row_with(
         target.pm.data_mut(),
         width.saturating_mul(4),

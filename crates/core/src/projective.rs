@@ -191,11 +191,7 @@ impl Matrix3D {
         let [sx, sy, sz] = t.scale;
         let [rx, ry, rz] = t.rotation;
         let [x, y, z] = t.translation;
-        Self::scaling(sx, sy, sz)
-            .then(&Self::rotation_x(rx))
-            .then(&Self::rotation_y(ry))
-            .then(&Self::rotation_z(rz))
-            .then(&Self::translation(x, y, z))
+        Self::scaling(sx, sy, sz).then(&Self::rotation_x(rx)).then(&Self::rotation_y(ry)).then(&Self::rotation_z(rz)).then(&Self::translation(x, y, z))
     }
 
     /// Interpolates between two matrices through their decompositions (angles take the short way round). Falls back
