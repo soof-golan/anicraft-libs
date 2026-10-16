@@ -348,7 +348,10 @@ fn audio_frames_at(frames: u64, fps: FrameRate, rate: u32) -> usize {
 fn open_audio(mux: &mut Mp4Writer<File>, brand: Brand, track: &AudioTrack) -> Result<AudioMux> {
     let channels = usize::from(track.channels);
     let (encoder, entry, media_start) = if brand == Brand::Mp4 {
-        let bitrate = 160_000_u32.saturating_mul(u32::from(track.channels));
+        // 160 kbps per channel, but an AAC frame holds at most 6144 bits per channel, i.e. 6 * sample rate bits per second: low sample rates
+        // (22.05 kHz and below) cannot take that much, so cap at five sixths of the limit.
+        let per_channel = 160_000_u32.min(track.sample_rate.saturating_mul(5));
+        let bitrate = per_channel.saturating_mul(u32::from(track.channels));
         let cfg = filmcraft_aac::EncoderConfig::cbr(track.sample_rate, channels, bitrate);
         let enc = filmcraft_aac::Encoder::new(cfg).map_err(enc_err)?;
         let entry = SampleEntry::aac(enc.audio_specific_config(), u32::from(track.channels), track.sample_rate);
