@@ -76,10 +76,7 @@ fn body_scene(edge: f64) -> (ArapSolver, Vec<Vec<Point>>) {
 fn pulled_scene() -> (ArapSolver, Vec<Vec<Point>>) {
     let mesh = rect_mesh(300.0, 300.0, 12.0);
     let corners = [Point::new(0.0, 0.0), Point::new(300.0, 0.0), Point::new(0.0, 300.0), Point::new(300.0, 300.0)];
-    let pins: Vec<u32> = corners
-        .iter()
-        .map(|c| ids_where(&mesh, |p| p.distance(*c) < 1.0).first().copied().unwrap())
-        .collect();
+    let pins: Vec<u32> = corners.iter().map(|c| ids_where(&mesh, |p| p.distance(*c) < 1.0).first().copied().unwrap()).collect();
     let solver = ArapSolver::new(&mesh, &pins).unwrap();
     let targets = [(300.0, -250.0), (-900.0, 700.0), (50.0, 2000.0)]
         .iter()
