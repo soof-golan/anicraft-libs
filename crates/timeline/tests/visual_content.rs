@@ -7,7 +7,9 @@
     clippy::as_conversions,
     clippy::float_cmp,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    clippy::chunks_exact_to_as_chunks,
+    clippy::panic
 )]
 
 mod common;
