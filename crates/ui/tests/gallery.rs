@@ -162,6 +162,12 @@ fn gallery(theme: Theme) -> Gallery {
         ],
         selected: Some(2),
         filter: String::new(),
+        preview: anim_ui::library::LibraryPreview {
+            playable: true,
+            progress_permille: 350,
+            caption: "Movie clip, 24 frames, 550 x 400".into(),
+            ..Default::default()
+        },
     };
     let props = vec![
         Property::new("x", "X", PropValue::number(120.0).precision(1, 0.5).with_suffix(" px")).in_section("Position and size"),

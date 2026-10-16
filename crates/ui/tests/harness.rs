@@ -341,7 +341,12 @@ fn library_panel_filters_and_selects() {
         origin: Pos2,
     }
     let rig = Rig {
-        model: LibraryModel { items: vec![item(1, "Hero"), item(2, "Villain")], selected: None, filter: String::new() },
+        model: LibraryModel {
+            items: vec![item(1, "Hero"), item(2, "Villain")],
+            selected: None,
+            filter: String::new(),
+            preview: anim_ui::library::LibraryPreview::default(),
+        },
         events: Vec::new(),
         origin: Pos2::ZERO,
     };
@@ -354,8 +359,8 @@ fn library_panel_filters_and_selects() {
     );
     h.run();
     let o = h.state().origin;
-    // Rows start below the 96 high preview, the search row and the count label.
-    let row_y = o.y + 96.0 + 8.0 + 24.0 + 8.0 + 14.0 + 6.0 + 11.0;
+    // Rows start below the preview, the search row and the count label.
+    let row_y = o.y + anim_ui::library::PREVIEW_HEIGHT + 8.0 + 24.0 + 8.0 + 14.0 + 6.0 + 11.0;
     click(&mut h, pos2(o.x + 120.0, row_y));
     assert!(h.state().events.iter().any(|e| matches!(e, LibraryEvent::Select(_))), "{:?}", h.state().events);
     let _ = Rect::NOTHING;

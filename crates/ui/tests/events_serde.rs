@@ -66,7 +66,14 @@ fn other_events_round_trip() {
         round_trip(&e);
     }
     round_trip(&ToolbarEvent::Select("pen".into()));
-    for e in [LibraryEvent::Select(1), LibraryEvent::FilterChanged("hero".into()), LibraryEvent::Action { id: 2, action: LibraryAction::Duplicate }] {
+    for e in [
+        LibraryEvent::Select(1),
+        LibraryEvent::FilterChanged("hero".into()),
+        LibraryEvent::Action { id: 2, action: LibraryAction::Duplicate },
+        LibraryEvent::PreviewPlay,
+        LibraryEvent::PreviewStop,
+        LibraryEvent::PreviewSeek(500),
+    ] {
         round_trip(&e);
     }
     round_trip(&PropertyEdit { id: "x".into(), value: PropValue::number(3.0).precision(1, 0.1), commit: true });
