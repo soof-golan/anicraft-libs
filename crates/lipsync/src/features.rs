@@ -147,6 +147,7 @@ fn zero_crossing_rate(x: &[f32]) -> f32 {
 }
 
 /// Highest normalised autocorrelation for lags corresponding to 70..400 Hz.
+#[allow(clippy::suboptimal_flops, reason = "mul_add is a libm call on baseline x86-64")]
 fn voicing(x: &[f32], rate: f32) -> f32 {
     let n = x.len();
     let lo = samples_for(1.0 / 400.0, rate, 2);
