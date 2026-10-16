@@ -26,6 +26,9 @@ const MAX_PLANS: usize = 512;
 /// Most document shapes whose display nodes are kept; further shapes are converted on every use.
 const MAX_SHAPES: usize = 4096;
 
+/// Most timelines whose layer trees are kept.
+const MAX_TREES: usize = 4096;
+
 /// Grey used for a bitmap whose pixels are not available.
 const MISSING_BITMAP: Rgba8 = Rgba8::new(128, 128, 128, 160);
 
@@ -86,7 +89,8 @@ enum Item<'a> {
     Morphed { shape: EdgeShape, matrix: Affine },
 }
 
-type PlanKey = (String, usize, u32, usize);
+/// A shape tween of a document: the timeline (by address), the layer, the keyframe and which of its shapes.
+type PlanKey = (usize, usize, u32, usize);
 
 /// Turns a [`Document`] into [`DisplayList`](anim_display::DisplayList)s.
 ///
@@ -107,6 +111,8 @@ pub struct Evaluator<'a> {
     shapes: HashMap<usize, Vec<Node>>,
     /// Motion guides by the address of the keyframe that holds them.
     guides: HashMap<usize, Option<Guide>>,
+    /// Layer trees by the address of their timeline, taken out while the timeline is being drawn.
+    trees: HashMap<usize, Vec<LayerNode>>,
 }
 
 impl std::fmt::Debug for Evaluator<'_> {
@@ -130,6 +136,7 @@ impl<'a> Evaluator<'a> {
             plans: HashMap::new(),
             shapes: HashMap::new(),
             guides: HashMap::new(),
+            trees: HashMap::new(),
         }
     }
 
@@ -207,6 +214,7 @@ impl<'a> Evaluator<'a> {
         self.plans.clear();
         self.shapes.clear();
         self.guides.clear();
+        self.trees.clear();
     }
 
     /// Number of frames of scene `scene`.
@@ -226,7 +234,7 @@ impl<'a> Evaluator<'a> {
         let mut list = anim_display::DisplayList::new(Size::new(doc.width, doc.height), background);
         if let Some(timeline) = doc.scenes.get(scene) {
             let mut state = State::default();
-            list.nodes = self.timeline_nodes(timeline, &format!("s{scene}"), Time { frame, clock: frame }, &mut state);
+            self.timeline_nodes(timeline, Time { frame, clock: frame }, &mut state, &mut list.nodes);
         }
         list
     }
@@ -240,7 +248,7 @@ impl<'a> Evaluator<'a> {
         let mut list = anim_display::DisplayList::new(Size::new(doc.width, doc.height), None);
         if let Some(symbol) = doc.library.find_symbol(name) {
             let mut state = State { stack: vec![symbol.name.as_str()] };
-            list.nodes = self.timeline_nodes(&symbol.timeline, &format!("y:{name}"), Time { frame, clock: frame }, &mut state);
+            self.timeline_nodes(&symbol.timeline, Time { frame, clock: frame }, &mut state, &mut list.nodes);
         }
         list
     }
@@ -274,14 +282,18 @@ impl<'a> Evaluator<'a> {
 
     // ---- timelines and layers ----
 
-    fn timeline_nodes(&mut self, timeline: &'a Timeline, key: &str, time: Time, state: &mut State<'a>) -> Vec<Node> {
-        let tree = timeline.layer_tree();
-        self.emit_layers(timeline, &tree, key, time, state)
+    /// Appends the layers of `timeline` at `time` to `out`.
+    fn timeline_nodes(&mut self, timeline: &'a Timeline, time: Time, state: &mut State<'a>, out: &mut Vec<Node>) {
+        let address = std::ptr::from_ref(timeline).addr();
+        let tree = self.trees.remove(&address).unwrap_or_else(|| timeline.layer_tree());
+        self.emit_layers(timeline, &tree, time, state, out);
+        if self.trees.len() < MAX_TREES {
+            self.trees.insert(address, tree);
+        }
     }
 
-    /// Layers bottom to top. `nodes` is top to bottom, as the tree lists them.
-    fn emit_layers(&mut self, timeline: &'a Timeline, nodes: &[LayerNode], key: &str, time: Time, state: &mut State<'a>) -> Vec<Node> {
-        let mut out = Vec::new();
+    /// Appends the layers bottom to top. `nodes` is top to bottom, as the tree lists them.
+    fn emit_layers(&mut self, timeline: &'a Timeline, nodes: &[LayerNode], time: Time, state: &mut State<'a>, out: &mut Vec<Node>) {
         for node in nodes.iter().rev() {
             let Some(layer) = timeline.layers.get(node.index) else { continue };
             let shown = layer.visible || self.options.include_hidden;
@@ -291,7 +303,8 @@ impl<'a> Evaluator<'a> {
                     if !shown {
                         continue;
                     }
-                    let children = self.emit_layers(timeline, &node.children, key, time, state);
+                    let mut children = Vec::new();
+                    self.emit_layers(timeline, &node.children, time, state, &mut children);
                     if !children.is_empty() {
                         out.push(Node::Group(Group { children, ..Group::default() }));
                     }
@@ -299,58 +312,53 @@ impl<'a> Evaluator<'a> {
                 LayerKind::Mask => {
                     if !shown {
                         // A hidden mask does not mask: the layers it covers show in full.
-                        out.extend(self.emit_layers(timeline, &node.children, key, time, state));
+                        self.emit_layers(timeline, &node.children, time, state, out);
                         continue;
                     }
-                    let mask = self.layer_nodes(timeline, node.index, key, time, state);
-                    let children = self.emit_layers(timeline, &node.children, key, time, state);
+                    let mut mask = Vec::new();
+                    self.layer_nodes(timeline, node.index, time, state, &mut mask);
+                    let mut children = Vec::new();
+                    self.emit_layers(timeline, &node.children, time, state, &mut children);
                     if !children.is_empty() {
                         out.push(Node::Group(Group { mask: Some(mask), children, ..Group::default() }));
                     }
                 }
                 LayerKind::Guide => {
                     if self.options.include_guides && shown {
-                        out.extend(self.layer_nodes(timeline, node.index, key, time, state));
+                        self.layer_nodes(timeline, node.index, time, state, out);
                     }
                     // Layers guided by a motion guide are ordinary layers.
-                    out.extend(self.emit_layers(timeline, &node.children, key, time, state));
+                    self.emit_layers(timeline, &node.children, time, state, out);
                 }
                 LayerKind::Normal | LayerKind::Guided | LayerKind::Masked => {
                     if shown {
-                        out.extend(self.layer_nodes(timeline, node.index, key, time, state));
+                        self.layer_nodes(timeline, node.index, time, state, out);
                     }
-                    if !node.children.is_empty() {
-                        out.extend(self.emit_layers(timeline, &node.children, key, time, state));
-                    }
+                    self.emit_layers(timeline, &node.children, time, state, out);
                 }
             }
         }
-        out
     }
 
-    fn layer_nodes(&mut self, timeline: &'a Timeline, layer_index: usize, key: &str, time: Time, state: &mut State<'a>) -> Vec<Node> {
-        let Some(layer) = timeline.layers.get(layer_index) else { return Vec::new() };
-        let Some(keyframe) = layer.keyframe_at(time.frame) else { return Vec::new() };
+    fn layer_nodes(&mut self, timeline: &'a Timeline, layer_index: usize, time: Time, state: &mut State<'a>, out: &mut Vec<Node>) {
+        let Some(layer) = timeline.layers.get(layer_index) else { return };
+        let Some(keyframe) = layer.keyframe_at(time.frame) else { return };
         let since = time.frame.saturating_sub(keyframe.index);
         let top = state.stack.is_empty();
         let guided = guided_tween(timeline, layer, keyframe, time.frame);
-        let items = self.layer_items(layer, keyframe, key, layer_index, time.frame, guided);
-        let mut out = Vec::new();
+        let items = self.layer_items(timeline, layer, keyframe, layer_index, time.frame, guided);
         for (i, item) in items.into_iter().enumerate() {
             let node_key = top.then(|| element_key(layer_index, i));
-            if let Some(node) = self.item_node(item, node_key, since, time, state, 0) {
-                out.push(node);
-            }
+            out.extend(self.item_node(item, node_key, since, time, state, 0));
         }
-        out
     }
 
     /// The elements of `keyframe` as they are at `frame`, tweened when the keyframe starts a tween.
     fn layer_items(
         &mut self,
+        timeline: &'a Timeline,
         layer: &'a Layer,
         keyframe: &'a Frame,
-        key: &str,
         layer_index: usize,
         frame: u32,
         guided: Option<GuidedTween<'a>>,
@@ -376,7 +384,7 @@ impl<'a> Evaluator<'a> {
             }
             TweenType::Shape => {
                 let Some(next) = layer.next_keyframe_after(keyframe.index) else { return hold() };
-                self.shape_tween(keyframe, next, key, layer_index, frame)
+                self.shape_tween(keyframe, next, std::ptr::from_ref(timeline).addr(), layer_index, frame)
             }
             TweenType::MotionObject => {
                 let Some(tracks) = keyframe.motion_object_xml.as_deref().and_then(MotionTracks::parse) else { return hold() };
@@ -400,7 +408,7 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn shape_tween(&mut self, keyframe: &'a Frame, next: &'a Frame, key: &str, layer_index: usize, frame: u32) -> Vec<Item<'a>> {
+    fn shape_tween(&mut self, keyframe: &'a Frame, next: &'a Frame, scope: usize, layer_index: usize, frame: u32) -> Vec<Item<'a>> {
         let span = next.index.saturating_sub(keyframe.index);
         let end_shapes: Vec<_> = next.elements.iter().filter_map(|e| if let Element::Shape(s) = e { Some(s) } else { None }).collect();
         if span == 0 {
@@ -424,7 +432,7 @@ impl<'a> Evaluator<'a> {
             if self.plans.len() >= MAX_PLANS {
                 self.plans.clear();
             }
-            let plan_key = (key.to_owned(), layer_index, keyframe.index, this);
+            let plan_key = (scope, layer_index, keyframe.index, this);
             let plan = self.plans.entry(plan_key).or_insert_with(|| MorphPlan::new(&from.shape, &to.shape, &morph_options(keyframe)));
             let shape = plan.at(eased);
             let matrix = anim_morph::style::lerp_affine(from.matrix, to.matrix, eased);
@@ -589,7 +597,8 @@ impl<'a> Evaluator<'a> {
             SymbolKind::Button => symbol.timeline.labels().iter().find(|(_, l)| *l == "_up").map_or(0, |(f, _)| *f).min(last),
         };
         state.stack.push(symbol.name.as_str());
-        let nodes = self.timeline_nodes(&symbol.timeline, &format!("y:{}", symbol.name), Time { frame: local, clock: time.clock }, state);
+        let mut nodes = Vec::new();
+        self.timeline_nodes(&symbol.timeline, Time { frame: local, clock: time.clock }, state, &mut nodes);
         state.stack.pop();
         nodes
     }
