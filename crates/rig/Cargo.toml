@@ -19,3 +19,8 @@ thiserror = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
+criterion = { version = "0.8", default-features = false }
+
+[[bench]]
+name = "arap"
+harness = false
