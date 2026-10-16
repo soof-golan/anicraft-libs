@@ -3,11 +3,11 @@
 #![allow(dead_code, clippy::arithmetic_side_effects, clippy::indexing_slicing, clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]
 #![allow(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::missing_const_for_fn, reason = "test code")]
 
-use std::fmt::Write as _;
 use anim_artwork::{ArtworkTree, to_display};
 use anim_core::Rgba8;
 use anim_display::ImageStore;
 use anim_render::{Background, RenderOptions, render};
+use std::fmt::Write as _;
 
 /// Straight-alpha-free (opaque) render of a tree on white: `(width, height, rgba)`.
 pub fn render_tree(tree: &ArtworkTree) -> (u32, u32, Vec<u8>) {
