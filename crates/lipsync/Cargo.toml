@@ -15,7 +15,12 @@ anim-core = { workspace = true }
 rustfft = { workspace = true }
 serde = { workspace = true }
 
+[[bench]]
+name = "lipsync"
+harness = false
+
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false }
 png = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
