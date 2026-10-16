@@ -4,7 +4,7 @@ use anim_core::{BlendMode, Point, Rect, Size, num};
 use anim_display::Image;
 use photocraft_psd::{BlendMode as PsdBlend, GrayImage, LayerNode, LayerRecord, PsdFile};
 
-use crate::raster::{apply_mask, premultiply};
+use crate::raster::{mul255, premultiply};
 use crate::tree::{ArtKind, ArtMask, ArtNode, ArtworkTree, blends_backdrop};
 use crate::vmask::vector_mask;
 use crate::{ArtworkError, Limits, check_input};
@@ -126,7 +126,11 @@ impl Ctx<'_> {
             match mask {
                 Ok(mask) => {
                     let w = num::u32_to_usize(width);
-                    apply_mask(&mut data, w, |x, y| mask_at(&mask, i64::from(left), i64::from(top), x, y));
+                    let mut row = vec![0_u8; w];
+                    for (y, pixels) in data.chunks_exact_mut(w.saturating_mul(4).max(4)).enumerate() {
+                        mask_row(&mask, i64::from(left), i64::from(top), y, &mut row);
+                        scale_row(pixels, &row);
+                    }
                 }
                 Err(e) => self.warn(&name, &format!("mask could not be decoded ({e}), ignored")),
             }
@@ -171,29 +175,47 @@ impl Ctx<'_> {
             return None;
         }
         let mut data = Vec::with_capacity(Image::byte_len(width, height)?);
+        let mut row = vec![0_u8; num::u32_to_usize(width)];
         for y in 0..num::u32_to_usize(height) {
-            for x in 0..num::u32_to_usize(width) {
-                data.extend_from_slice(&[0, 0, 0, mask_at(&mask, i64::from(left), i64::from(top), x, y)]);
-            }
+            mask_row(&mask, i64::from(left), i64::from(top), y, &mut row);
+            data.extend(row.iter().flat_map(|m| [0, 0, 0, *m]));
         }
         let image = Image::new(width, height, data).ok()?;
         Some(ArtMask::Raster { image, offset: Point::new(f64::from(left), f64::from(top)) })
     }
 }
 
-/// Mask value for pixel `(x, y)` of an image whose top-left corner is at `(left, top)` on the canvas.
-fn mask_at(mask: &GrayImage, left: i64, top: i64, x: usize, y: usize) -> u8 {
-    let sample = || -> Option<u8> {
-        let cx = left.checked_add(i64::try_from(x).ok()?)?;
-        let cy = top.checked_add(i64::try_from(y).ok()?)?;
-        let mx = usize::try_from(cx.checked_sub(i64::from(mask.left))?).ok()?;
-        let my = usize::try_from(cy.checked_sub(i64::from(mask.top))?).ok()?;
-        if mx >= num::u32_to_usize(mask.width) || my >= num::u32_to_usize(mask.height) {
+/// Fills `row` with the mask values of row `y` of an image whose top-left corner is at `(left, top)` on the canvas:
+/// the mask's own samples where they overlap it, its default value elsewhere.
+fn mask_row(mask: &GrayImage, left: i64, top: i64, y: usize, row: &mut [u8]) {
+    row.fill(mask.default_value);
+    let copy = || -> Option<()> {
+        let my = usize::try_from(top.checked_add(i64::try_from(y).ok()?)?.checked_sub(i64::from(mask.top))?).ok()?;
+        if my >= num::u32_to_usize(mask.height) {
             return None;
         }
-        mask.data.get(my.checked_mul(num::u32_to_usize(mask.width))?.checked_add(mx)?).copied()
+        // Canvas columns covered by both the row and the mask.
+        let start = left.max(i64::from(mask.left));
+        let end = left.checked_add(i64::try_from(row.len()).ok()?)?.min(i64::from(mask.left).checked_add(i64::from(mask.width))?);
+        let from = usize::try_from(start.checked_sub(i64::from(mask.left))?).ok()?;
+        let len = usize::try_from(end.checked_sub(start)?).ok().filter(|len| *len > 0)?;
+        let base = my.checked_mul(num::u32_to_usize(mask.width))?.checked_add(from)?;
+        let src = mask.data.get(base..base.checked_add(len)?)?;
+        row.get_mut(usize::try_from(start.checked_sub(left)?).ok()?..)?.get_mut(..len)?.copy_from_slice(src);
+        Some(())
     };
-    sample().unwrap_or(mask.default_value)
+    let _ = copy();
+}
+
+/// Scales every channel of a row of premultiplied RGBA pixels by `mask / 255`.
+fn scale_row(pixels: &mut [u8], mask: &[u8]) {
+    for (px, m) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(mask) {
+        match *m {
+            255 => {}
+            0 => *px = [0; 4],
+            m => px.iter_mut().for_each(|c| *c = mul255(*c, m)),
+        }
+    }
 }
 
 fn common(record: &LayerRecord, kind: ArtKind) -> ArtNode {
@@ -336,6 +358,29 @@ mod tests {
         let list = crate::to_display(&tree, &mut anim_display::ImageStore::new());
         let anim_display::Node::Group(outer) = &list.nodes[0] else { panic!("group expected") };
         assert!(outer.mask.is_some());
+    }
+
+    #[test]
+    fn mask_rows_clip_to_the_mask_rectangle() {
+        // A 3 x 2 mask at canvas (2, 1) with background 9.
+        let mask = GrayImage { left: 2, top: 1, width: 3, height: 2, data: vec![1, 2, 3, 4, 5, 6], default_value: 9 };
+        let mut row = [0_u8; 6];
+        mask_row(&mask, 0, 0, 0, &mut row);
+        assert_eq!(row, [9; 6], "above the mask");
+        mask_row(&mask, 0, 0, 1, &mut row);
+        assert_eq!(row, [9, 9, 1, 2, 3, 9]);
+        mask_row(&mask, 0, 0, 2, &mut row);
+        assert_eq!(row, [9, 9, 4, 5, 6, 9]);
+        mask_row(&mask, 0, 0, 3, &mut row);
+        assert_eq!(row, [9; 6], "below the mask");
+        // A layer starting inside the mask's columns, and one starting left of the canvas.
+        let mut short = [0_u8; 2];
+        mask_row(&mask, 3, 0, 1, &mut short);
+        assert_eq!(short, [2, 3]);
+        mask_row(&mask, -4, 0, 1, &mut row);
+        assert_eq!(row, [9; 6]);
+        mask_row(&mask, -1, 0, 1, &mut row);
+        assert_eq!(row, [9, 9, 9, 1, 2, 3]);
     }
 
     #[test]

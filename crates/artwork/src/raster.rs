@@ -20,24 +20,6 @@ pub fn premultiply(rgba: &mut [u8]) {
     }
 }
 
-/// Scales every channel of a premultiplied image by `mask(x, y) / 255` (a layer mask applied to the pixels).
-pub fn apply_mask(rgba: &mut [u8], width: usize, mask: impl Fn(usize, usize) -> u8) {
-    if width == 0 {
-        return;
-    }
-    for (y, row) in rgba.chunks_exact_mut(width.saturating_mul(4)).enumerate() {
-        for (x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-            let m = mask(x, y);
-            if m == 255 {
-                continue;
-            }
-            for c in px.iter_mut() {
-                *c = mul255(*c, m);
-            }
-        }
-    }
-}
-
 /// Resamples a straight-alpha RGBA8 image through `xf` (image pixels to canvas) onto the canvas pixel grid,
 /// bilinear, returning premultiplied pixels and the top-left corner. `None` when the result would be empty,
 /// degenerate, or larger than `max_pixels`.
@@ -107,13 +89,6 @@ mod tests {
         let mut opaque = [9, 8, 7, 255];
         premultiply(&mut opaque);
         assert_eq!(opaque, [9, 8, 7, 255]);
-    }
-
-    #[test]
-    fn mask_scales_pixels() {
-        let mut px = vec![100, 100, 100, 200, 100, 100, 100, 200];
-        apply_mask(&mut px, 2, |x, _| if x == 0 { 0 } else { 255 });
-        assert_eq!(px, [0, 0, 0, 0, 100, 100, 100, 200]);
     }
 
     #[test]
