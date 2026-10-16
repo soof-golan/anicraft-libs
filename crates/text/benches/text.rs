@@ -45,12 +45,7 @@ fn paragraph(text: &str, alignment: Alignment, direction: Direction) -> Paragrap
     // Two styles per paragraph, so runs are split in the middle of the text.
     let split = text.char_indices().nth(text.chars().count() / 2).map_or(text.len(), |(i, _)| i);
     let (a, b) = text.split_at(split);
-    Paragraph {
-        alignment,
-        direction,
-        runs: vec![Run { size: 20.0, ..Run::new(a) }, Run { size: 24.0, bold: true, ..Run::new(b) }],
-        ..Paragraph::default()
-    }
+    Paragraph { alignment, direction, runs: vec![Run { size: 20.0, ..Run::new(a) }, Run { size: 24.0, bold: true, ..Run::new(b) }], ..Paragraph::default() }
 }
 
 /// `count` paragraphs cycling through the fixtures' texts.
