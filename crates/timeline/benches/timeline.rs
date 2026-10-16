@@ -30,8 +30,8 @@ use std::hint::black_box;
 use anim_core::kurbo::{Circle, Shape};
 use anim_core::{Affine, BezPath, Point, Rgba8};
 use anim_scene::{
-    ColorEffect, Document, EaseCurve, EaseTarget, Element, Frame, Layer, LayerKind, LoopMode, ShapeElement, SymbolInstance, SymbolKind, TweenEase,
-    TweenRotate, TweenType,
+    ColorEffect, Document, EaseCurve, EaseTarget, Element, Frame, Layer, LayerKind, LoopMode, ShapeElement, SymbolInstance, SymbolKind, TweenEase, TweenRotate,
+    TweenType,
 };
 use anim_shape::{EdgeShape, FillStyle, PathInput, StrokeStyle};
 use anim_timeline::{Evaluator, fade};
@@ -115,7 +115,12 @@ fn tween_layer(name: &str, symbol: &str, from: Point, to: Point, frames: u32) ->
 /// One layer whose single keyframe has a thousand tweened instances of "dot".
 fn many_instances() -> Document {
     let mut d = document(Vec::new());
-    add_symbol(&mut d, "dot", SymbolKind::Graphic, vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -4.0, 8.0, 8.0), RED)])])]);
+    add_symbol(
+        &mut d,
+        "dot",
+        SymbolKind::Graphic,
+        vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -4.0, 8.0, 8.0), RED)])])],
+    );
     let n = 1000;
     let mut a = Vec::new();
     let mut b = Vec::new();
@@ -141,7 +146,12 @@ fn many_instances() -> Document {
 fn nested_symbols() -> Document {
     let mut d = document(Vec::new());
     let depth = 7;
-    add_symbol(&mut d, "L6", SymbolKind::Graphic, vec![layer("leaf", LayerKind::Normal, None, vec![Frame::new(0, 4, vec![filled(rect_path(0.0, 0.0, 2.0, 2.0), BLUE)])])]);
+    add_symbol(
+        &mut d,
+        "L6",
+        SymbolKind::Graphic,
+        vec![layer("leaf", LayerKind::Normal, None, vec![Frame::new(0, 4, vec![filled(rect_path(0.0, 0.0, 2.0, 2.0), BLUE)])])],
+    );
     for level in (0..depth - 1).rev() {
         let child = format!("L{}", level + 1);
         let elements: Vec<Element> = (0..4)
@@ -162,7 +172,12 @@ fn nested_symbols() -> Document {
 /// Four hundred tweened layers, a quarter of them under animated masks.
 fn many_layers() -> Document {
     let mut d = document(Vec::new());
-    add_symbol(&mut d, "dot", SymbolKind::Graphic, vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -4.0, 8.0, 8.0), RED)])])]);
+    add_symbol(
+        &mut d,
+        "dot",
+        SymbolKind::Graphic,
+        vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -4.0, 8.0, 8.0), RED)])])],
+    );
     let mut layers = Vec::new();
     for i in 0..100u32 {
         let base = layers.len();
@@ -197,7 +212,12 @@ fn shape_tweens() -> Document {
 /// A guide layer with a 300-point polyline and a hundred guided, oriented tweens.
 fn guided() -> Document {
     let mut d = document(Vec::new());
-    add_symbol(&mut d, "dot", SymbolKind::Graphic, vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -2.0, 24.0, 4.0), RED)])])]);
+    add_symbol(
+        &mut d,
+        "dot",
+        SymbolKind::Graphic,
+        vec![layer("d", LayerKind::Normal, None, vec![Frame::new(0, 1, vec![filled(rect_path(-4.0, -2.0, 24.0, 4.0), RED)])])],
+    );
     let mut path = BezPath::new();
     for i in 0..300 {
         let p = Point::new(f64::from(i) * 3.0, 400.0 + 100.0 * (f64::from(i) * 0.1).sin());

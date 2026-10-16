@@ -39,11 +39,8 @@ fn parts(shape: &EdgeShape) -> (Vec<Part>, Vec<Part>) {
         .iter()
         .flat_map(|region| region.contours().into_iter().filter_map(|p| Contour::from_path(&p)).map(|c| Part::new(region.style, c)))
         .collect();
-    let strokes = assembled
-        .strokes
-        .iter()
-        .flat_map(|run| run.polylines().into_iter().filter_map(|p| Contour::from_path(&p)).map(|c| Part::new(run.style, c)))
-        .collect();
+    let strokes =
+        assembled.strokes.iter().flat_map(|run| run.polylines().into_iter().filter_map(|p| Contour::from_path(&p)).map(|c| Part::new(run.style, c))).collect();
     (fills, strokes)
 }
 
