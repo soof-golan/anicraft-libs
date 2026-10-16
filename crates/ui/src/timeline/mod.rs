@@ -12,6 +12,6 @@ mod widget;
 
 pub use geometry::{FrameSelection, Hit, MAX_FRAME_WIDTH, MIN_FRAME_WIDTH, TimelineGeometry, layers_between};
 pub use layers::{INDENT, LayerDrag, TOGGLE_WIDTH, layers_list};
-pub use model::{LayerId, LayerKind, LayerRow, OnionSkin, Span, TimelineModel, TweenKind, Waveform};
-pub use state::{DropPlacement, FrameAction, LayerEvent, TimelineEvent, TimelineViewState};
+pub use model::{LabelKind, LayerId, LayerKind, LayerRow, OnionSkin, PreviewBox, Span, TimelineModel, TweenKind, Waveform};
+pub use state::{DropPlacement, FrameAction, FrameSize, LayerEvent, PreviewMode, ROW_HEIGHT_NORMAL, ROW_HEIGHT_SHORT, TimelineEvent, TimelineViewState};
 pub use widget::{BAR_HEIGHT, RULER_HEIGHT, drag_delta, frame_shortcuts, range_selection, ruler_label, ruler_label_step, timeline};

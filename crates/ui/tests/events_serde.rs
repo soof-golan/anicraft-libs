@@ -31,6 +31,16 @@ fn timeline_events_round_trip() {
         TimelineEvent::Zoom { frame_width: 24.0, scroll_x: 5.5 },
         TimelineEvent::SetOnionRange { before: 3, after: 1 },
         TimelineEvent::ToggleOnion,
+        TimelineEvent::ToggleEditMultiple,
+        TimelineEvent::SetFrameView {
+            size: anim_ui::timeline::FrameSize::Large,
+            short: true,
+            tinted: false,
+            preview: anim_ui::timeline::PreviewMode::InContext,
+        },
+        TimelineEvent::FrameAction(FrameAction::PasteOverwrite),
+        TimelineEvent::Layer(LayerEvent::Convert { id: 3, kind: anim_ui::timeline::LayerKind::Mask }),
+        TimelineEvent::Layer(LayerEvent::AddMotionGuide(2)),
     ] {
         round_trip(&e);
     }

@@ -121,20 +121,8 @@ fn draw_row(ui: &Ui, id: Id, rect: Rect, layer: &LayerRow, row_idx: usize, view:
     row.dnd_set_drag_payload(LayerDrag(layer.id));
     drop_target(&row, &painter, layer, p, events);
     let layer_id = layer.id;
-    row.context_menu(|ui| {
-        for (label, ev) in [
-            ("New layer", LayerEvent::Add),
-            ("New folder", LayerEvent::AddFolder),
-            ("Duplicate", LayerEvent::Duplicate(layer_id)),
-            ("Delete", LayerEvent::Delete(layer_id)),
-            ("Properties...", LayerEvent::Properties(layer_id)),
-        ] {
-            if ui.button(label).clicked() {
-                events.push(ev);
-                ui.close();
-            }
-        }
-    });
+    let kind = layer.kind;
+    row.context_menu(|ui| layer_menu(ui, layer_id, kind, events));
 
     // Left side: indent, chevron, icon, colour chip, name.
     let mut x = INDENT.mul_add(f32_from_u32(layer.depth), rect.left() + 4.0);
@@ -185,6 +173,40 @@ fn draw_row(ui: &Ui, id: Id, rect: Rect, layer: &LayerRow, row_idx: usize, view:
                 1 => LayerEvent::ToggleLocked(layer.id),
                 _ => LayerEvent::ToggleOutline(layer.id),
             });
+        }
+    }
+}
+
+/// The layer context menu: insert, delete, the layer type (Guide and Mask toggle), the motion guide and properties.
+fn layer_menu(ui: &mut Ui, layer: u64, kind: LayerKind, events: &mut Vec<LayerEvent>) {
+    let convertible = !matches!(kind, LayerKind::Camera);
+    let toggled = |target: LayerKind| if kind == target { LayerKind::Normal } else { target };
+    let items: [(&str, Option<LayerEvent>, bool, bool); 11] = [
+        ("Insert Layer", Some(LayerEvent::Add), true, false),
+        ("Insert Folder", Some(LayerEvent::AddFolder), true, false),
+        ("Delete Layer", Some(LayerEvent::Delete(layer)), true, false),
+        ("Duplicate Layer", Some(LayerEvent::Duplicate(layer)), true, false),
+        ("", None, true, false),
+        ("Guide", Some(LayerEvent::Convert { id: layer, kind: toggled(LayerKind::Guide) }), convertible, kind == LayerKind::Guide),
+        (
+            "Add Classic Motion Guide",
+            Some(LayerEvent::AddMotionGuide(layer)),
+            matches!(kind, LayerKind::Normal | LayerKind::Guided | LayerKind::Masked),
+            false,
+        ),
+        ("Mask", Some(LayerEvent::Convert { id: layer, kind: toggled(LayerKind::Mask) }), convertible, kind == LayerKind::Mask),
+        ("Folder", Some(LayerEvent::Convert { id: layer, kind: toggled(LayerKind::Folder) }), convertible, kind == LayerKind::Folder),
+        ("", None, true, false),
+        ("Properties...", Some(LayerEvent::Properties(layer)), true, false),
+    ];
+    for (label, event, enabled, checked) in items {
+        let Some(event) = event else {
+            ui.separator();
+            continue;
+        };
+        if ui.add_enabled(enabled, egui::Button::selectable(checked, label)).clicked() {
+            events.push(event);
+            ui.close();
         }
     }
 }

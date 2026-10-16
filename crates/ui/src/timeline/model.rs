@@ -39,6 +39,25 @@ pub struct Waveform {
     pub peaks: Vec<f32>,
 }
 
+/// What a frame label is: a name scripts can jump to, a comment (only shown), or a named anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum LabelKind {
+    #[default]
+    Name,
+    Comment,
+    Anchor,
+}
+
+/// A box of a keyframe's content, in stage fractions (0 to 1 across the stage), for the cell previews.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PreviewBox {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color: Rgba8,
+}
+
 /// A run of frames that starts at a keyframe and lasts `len` frames (until the next keyframe).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Span {
@@ -52,15 +71,32 @@ pub struct Span {
     /// A tween whose end keyframe is missing or incompatible: drawn dashed.
     pub tween_broken: bool,
     pub label: Option<String>,
+    /// How `label` is drawn.
+    #[serde(default)]
+    pub label_kind: LabelKind,
     pub has_script: bool,
     pub sound: Option<Waveform>,
+    /// The content boxes the Frame View previews draw; empty for a blank keyframe.
+    #[serde(default)]
+    pub preview: Vec<PreviewBox>,
 }
 
 impl Span {
     /// A plain keyframe span.
     #[must_use]
     pub const fn key(start: u32, len: u32) -> Self {
-        Self { start, len, blank: false, tween: TweenKind::None, tween_broken: false, label: None, has_script: false, sound: None }
+        Self {
+            start,
+            len,
+            blank: false,
+            tween: TweenKind::None,
+            tween_broken: false,
+            label: None,
+            label_kind: LabelKind::Name,
+            has_script: false,
+            sound: None,
+            preview: Vec::new(),
+        }
     }
 
     /// A blank keyframe span.

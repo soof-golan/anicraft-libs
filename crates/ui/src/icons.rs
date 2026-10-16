@@ -43,6 +43,9 @@ pub enum Icon {
     ChevronRight,
     ChevronDown,
     Onion,
+    OnionOutlines,
+    EditMultiple,
+    AutoKeyframe,
     Search,
     // Transport.
     Play,
@@ -257,6 +260,19 @@ fn paint_chrome(c: &Canvas<'_>, icon: Icon) -> bool {
         Icon::Onion => {
             c.circle((0.38, 0.5), 0.26, false);
             c.circle((0.62, 0.5), 0.26, false);
+        }
+        Icon::OnionOutlines => {
+            c.circle((0.38, 0.5), 0.26, false);
+            c.circle((0.62, 0.5), 0.26, false);
+            c.line((0.5, 0.28), (0.5, 0.72));
+        }
+        Icon::EditMultiple => {
+            c.rect_shape((0.1, 0.18), (0.6, 0.68), false);
+            c.rect_shape((0.4, 0.34), (0.9, 0.84), false);
+        }
+        Icon::AutoKeyframe => {
+            c.poly(&[(0.5, 0.12), (0.88, 0.5), (0.5, 0.88), (0.12, 0.5)], false);
+            c.circle((0.5, 0.5), 0.1, true);
         }
         Icon::Search => {
             c.circle((0.42, 0.42), 0.28, false);

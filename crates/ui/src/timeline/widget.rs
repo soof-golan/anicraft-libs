@@ -5,8 +5,8 @@ use egui::{Align2, Color32, FontId, Id, Painter, Rect, Sense, Shape, Stroke, Str
 use super::{
     geometry::{FrameSelection, Hit, TimelineGeometry, layers_between},
     layers::{draw_header, draw_rows},
-    model::{LayerRow, Span, TimelineModel, TweenKind},
-    state::{FrameAction, LayerEvent, TimelineEvent, TimelineViewState},
+    model::{LabelKind, LayerRow, Span, TimelineModel, TweenKind},
+    state::{FrameAction, FrameSize, LayerEvent, PreviewMode, TimelineEvent, TimelineViewState},
 };
 use crate::{
     icons::Icon,
@@ -44,7 +44,8 @@ pub fn ruler_label(frame: u32, step: u32) -> Option<String> {
 }
 
 /// Animate's frame keyboard shortcuts as events: F5 insert frame, Shift+F5 remove frames, F6 insert keyframe,
-/// Shift+F6 clear keyframe, F7 insert blank keyframe, Ctrl/Cmd+Alt+C/V copy and paste frames.
+/// Shift+F6 clear keyframe, F7 insert blank keyframe, Ctrl/Cmd+Alt+C/X/V cut, copy and paste frames (with Shift
+/// paste and overwrite), Alt+Backspace clear frames and Ctrl/Cmd+Alt+A select all frames.
 ///
 /// Call it once per frame where the timeline has focus (it consumes the keys it handles).
 #[must_use = "the keys are consumed: apply the returned events"]
@@ -56,8 +57,12 @@ pub fn frame_shortcuts(ctx: &egui::Context) -> Vec<TimelineEvent> {
         (Modifiers::NONE, Key::F5, FrameAction::InsertFrame),
         (Modifiers::NONE, Key::F6, FrameAction::InsertKeyframe),
         (Modifiers::NONE, Key::F7, FrameAction::InsertBlankKeyframe),
+        (Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT, Key::V, FrameAction::PasteOverwrite),
         (Modifiers::COMMAND | Modifiers::ALT, Key::C, FrameAction::CopyFrames),
+        (Modifiers::COMMAND | Modifiers::ALT, Key::X, FrameAction::CutFrames),
         (Modifiers::COMMAND | Modifiers::ALT, Key::V, FrameAction::PasteFrames),
+        (Modifiers::COMMAND | Modifiers::ALT, Key::A, FrameAction::SelectAllFrames),
+        (Modifiers::ALT, Key::Backspace, FrameAction::ClearFrames),
     ];
     ctx.input_mut(|i| table.iter().filter(|(m, k, _)| i.consume_key(*m, *k)).map(|(_, _, a)| TimelineEvent::FrameAction(*a)).collect())
 }
@@ -151,8 +156,8 @@ pub fn timeline(ui: &mut Ui, model: &TimelineModel, view: &TimelineViewState) ->
     let grid_painter = ui.painter_at(layout.geo.grid);
     paint_grid(&grid_painter, model, view, &layout, &visible, &p);
     events.extend(grid_interaction(ui, model, view, &layout, &visible_ids, id, &p));
-    paint_ruler(ui, model, &layout, &p);
-    events.extend(ruler_interaction(ui, model, &layout, id));
+    paint_ruler(ui, model, view, &layout, &p);
+    events.extend(ruler_interaction(ui, model, view, &layout, id));
     paint_playhead(ui, model, &layout, &p);
     events.extend(scrollbars(ui, view, &layout, id));
     events.extend(bottom_bar(ui, model, view, &layout, id));
@@ -244,11 +249,11 @@ fn paint_grid(painter: &Painter, model: &TimelineModel, view: &TimelineViewState
         }
     }
     paint_selection(painter, view, geo, model, visible, p);
-    if model.onion.enabled {
+    if model.onion.enabled || view.edit_multiple {
         let lo = model.current_frame.saturating_sub(model.onion.before);
         let hi = model.current_frame.saturating_add(model.onion.after);
         let band = Rect::from_min_max(pos2(geo.x_of_frame(lo), geo.grid.top()), pos2(geo.x_of_frame(hi.saturating_add(1)), content_bottom));
-        painter.rect_filled(band, 0.0, p.onion.gamma_multiply(0.10));
+        painter.rect_filled(band, 0.0, p.onion.gamma_multiply(if view.edit_multiple { 0.18 } else { 0.10 }));
     }
 }
 
@@ -259,11 +264,12 @@ fn paint_spans(painter: &Painter, layer: &LayerRow, row: usize, view: &TimelineV
             break;
         }
         let rect = geo.cell_rect(row, span.start, span.end().saturating_sub(1)).shrink2(vec2(0.0, 1.0));
-        let (body, edge) = span_colors(span, p);
+        let (body, edge) = if view.tinted_frames || span.tween == TweenKind::None { span_colors(span, p) } else { (p.span, p.border) };
         painter.rect(rect, 0.0, body, Stroke::new(1.0, edge), StrokeKind::Inside);
         if let (true, Some(wave)) = (view.show_waveforms, span.sound.as_ref()) {
             paint_waveform(painter, rect, &wave.peaks, p);
         }
+        paint_preview(painter, span, row, geo, view.preview);
         paint_span_marks(painter, span, row, geo, p);
     }
 }
@@ -322,17 +328,63 @@ fn paint_span_marks(painter: &Painter, span: &Span, row: usize, geo: &TimelineGe
         }
     }
     if let Some(label) = &span.label {
-        let at = pos2(key.right() + 8.0, key.center().y);
-        painter.line_segment([pos2(key.right() + 3.0, key.top() + 4.0), pos2(key.right() + 3.0, key.bottom() - 4.0)], Stroke::new(1.0, p.warning));
-        painter.add(Shape::convex_polygon(
-            vec![pos2(key.right() + 3.0, key.top() + 4.0), pos2(key.right() + 8.0, key.top() + 6.5), pos2(key.right() + 3.0, key.top() + 9.0)],
-            p.warning,
-            Stroke::NONE,
-        ));
-        painter.text(at + vec2(6.0, 0.0), Align2::LEFT_CENTER, visual(label), FontId::proportional(10.0), p.text);
+        paint_label(painter, key, label, span.label_kind, p);
     }
     if span.has_script {
         painter.text(pos2(key.center().x + fw, key.center().y), Align2::LEFT_CENTER, "a", FontId::proportional(11.0), p.text);
+    }
+}
+
+/// The frame label next to its keyframe: a red flag for a name, `//` for a comment, an anchor mark for an anchor.
+fn paint_label(painter: &Painter, key: Rect, label: &str, kind: LabelKind, p: &Palette) {
+    let x = key.right() + 3.0;
+    let at = pos2(x + 9.0, key.center().y);
+    let (mark, text) = match kind {
+        LabelKind::Name => (p.warning, p.text),
+        LabelKind::Comment => (p.shape_tween, p.shape_tween),
+        LabelKind::Anchor => (p.accent, p.text),
+    };
+    match kind {
+        LabelKind::Name => {
+            painter.line_segment([pos2(x, key.top() + 4.0), pos2(x, key.bottom() - 4.0)], Stroke::new(1.0, mark));
+            painter.add(Shape::convex_polygon(vec![pos2(x, key.top() + 4.0), pos2(x + 5.0, key.top() + 6.5), pos2(x, key.top() + 9.0)], mark, Stroke::NONE));
+            painter.text(at, Align2::LEFT_CENTER, visual(label), FontId::proportional(10.0), text);
+        }
+        LabelKind::Comment => {
+            painter.text(pos2(x, key.center().y), Align2::LEFT_CENTER, format!("// {}", visual(label)), FontId::proportional(10.0), text);
+        }
+        LabelKind::Anchor => {
+            let c = pos2(x + 3.0, key.center().y - 1.0);
+            painter.circle_stroke(c, 2.0, Stroke::new(1.0, mark));
+            painter.line_segment([pos2(c.x, c.y + 2.0), pos2(c.x, key.bottom() - 3.0)], Stroke::new(1.0, mark));
+            painter.line_segment([pos2(c.x - 3.0, key.bottom() - 6.0), pos2(c.x + 3.0, key.bottom() - 6.0)], Stroke::new(1.0, mark));
+            painter.text(at, Align2::LEFT_CENTER, visual(label), FontId::proportional(10.0), text);
+        }
+    }
+}
+
+/// The Preview / Preview in Context content of a keyframe: its boxes inside the first cell or across the span.
+fn paint_preview(painter: &Painter, span: &Span, row: usize, geo: &TimelineGeometry, mode: PreviewMode) {
+    if span.preview.is_empty() || mode == PreviewMode::Off {
+        return;
+    }
+    let area = geo.cell_rect(row, span.start, span.end().saturating_sub(1)).shrink2(vec2(1.0, 2.0));
+    // Preview fits the content's own bounds into the area; in context keeps the position on the stage.
+    let (min, size) = if mode == PreviewMode::Preview {
+        let min_x = span.preview.iter().map(|b| b.x).fold(f32::INFINITY, f32::min);
+        let min_y = span.preview.iter().map(|b| b.y).fold(f32::INFINITY, f32::min);
+        let max_x = span.preview.iter().map(|b| b.x + b.w).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = span.preview.iter().map(|b| b.y + b.h).fold(f32::NEG_INFINITY, f32::max);
+        (pos2(min_x, min_y), vec2((max_x - min_x).max(1.0e-4), (max_y - min_y).max(1.0e-4)))
+    } else {
+        (pos2(0.0, 0.0), vec2(1.0, 1.0))
+    };
+    for b in &span.preview {
+        let r = Rect::from_min_size(
+            pos2(((b.x - min.x) / size.x).mul_add(area.width(), area.left()), ((b.y - min.y) / size.y).mul_add(area.height(), area.top())),
+            vec2((b.w / size.x * area.width()).max(1.0), (b.h / size.y * area.height()).max(1.0)),
+        );
+        painter.rect_filled(r.intersect(area), 0.0, crate::util::color32(b.color).gamma_multiply(0.85));
     }
 }
 
@@ -349,7 +401,7 @@ fn paint_selection(painter: &Painter, view: &TimelineViewState, geo: &TimelineGe
     }
 }
 
-fn paint_ruler(ui: &Ui, model: &TimelineModel, layout: &Layout, p: &Palette) {
+fn paint_ruler(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, layout: &Layout, p: &Palette) {
     let geo = &layout.geo;
     let painter = ui.painter_at(geo.ruler);
     painter.rect_filled(geo.ruler, 0.0, p.surface);
@@ -369,7 +421,7 @@ fn paint_ruler(ui: &Ui, model: &TimelineModel, layout: &Layout, p: &Palette) {
             painter.text(pos2(geo.frame_width.mul_add(0.5, x), geo.ruler.top() + 5.0), Align2::CENTER_TOP, label, font.clone(), p.text_weak);
         }
     }
-    if model.onion.enabled {
+    if model.onion.enabled || view.edit_multiple {
         let lo = model.current_frame.saturating_sub(model.onion.before);
         let hi = model.current_frame.saturating_add(model.onion.after).saturating_add(1);
         let band = Rect::from_min_max(pos2(geo.x_of_frame(lo), geo.ruler.bottom() - 7.0), pos2(geo.x_of_frame(hi), geo.ruler.bottom() - 1.0));
@@ -461,6 +513,9 @@ fn grid_interaction(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, la
     {
         events.push(TimelineEvent::SelectFrames(range_selection(visible_ids, at, at)));
     }
+    if response.double_clicked() && !view.selection.is_empty() {
+        events.push(TimelineEvent::FrameAction(FrameAction::Properties));
+    }
     let has_selection = !view.selection.is_empty();
     response.context_menu(|ui| frame_menu(ui, has_selection, &mut events));
     events
@@ -493,19 +548,22 @@ fn frame_menu(ui: &mut Ui, has_selection: bool, events: &mut Vec<TimelineEvent>)
         ("Convert to Blank Keyframes", "", FrameAction::ConvertToBlankKeyframes),
         ("Reverse Frames", "", FrameAction::ReverseFrames),
         ("", "", FrameAction::SelectAllFrames),
-        ("Cut Frames", "", FrameAction::CutFrames),
-        ("Copy Frames", "", FrameAction::CopyFrames),
-        ("Paste Frames", "", FrameAction::PasteFrames),
-        ("Clear Frames", "", FrameAction::ClearFrames),
+        ("Cut Frames", "Ctrl+Alt+X", FrameAction::CutFrames),
+        ("Copy Frames", "Ctrl+Alt+C", FrameAction::CopyFrames),
+        ("Paste Frames", "Ctrl+Alt+V", FrameAction::PasteFrames),
+        ("Paste and Overwrite Frames", "Ctrl+Alt+Shift+V", FrameAction::PasteOverwrite),
+        ("Clear Frames", "Alt+Backspace", FrameAction::ClearFrames),
+        ("Select All Frames", "Ctrl+Alt+A", FrameAction::SelectAllFrames),
         ("", "", FrameAction::SelectAllFrames),
-        ("Select All Frames", "", FrameAction::SelectAllFrames),
+        ("Add Frame Label...", "", FrameAction::EditLabel),
+        ("Frame Properties...", "", FrameAction::Properties),
     ];
     for (label, shortcut, action) in items {
         if label.is_empty() {
             ui.separator();
             continue;
         }
-        let enabled = has_selection || *action == FrameAction::SelectAllFrames || *action == FrameAction::PasteFrames;
+        let enabled = has_selection || matches!(action, FrameAction::SelectAllFrames | FrameAction::PasteFrames | FrameAction::PasteOverwrite);
         let mut button = egui::Button::new(*label);
         if !shortcut.is_empty() {
             button = button.shortcut_text(*shortcut);
@@ -517,14 +575,14 @@ fn frame_menu(ui: &mut Ui, has_selection: bool, events: &mut Vec<TimelineEvent>)
     }
 }
 
-fn ruler_interaction(ui: &Ui, model: &TimelineModel, layout: &Layout, id: Id) -> Vec<TimelineEvent> {
+fn ruler_interaction(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, layout: &Layout, id: Id) -> Vec<TimelineEvent> {
     let geo = &layout.geo;
     let mut events = Vec::new();
     let max_frame = model.frame_count.saturating_sub(1);
 
     // Onion skin handles first so they win over scrubbing.
     let mut onion_drag = false;
-    if model.onion.enabled {
+    if model.onion.enabled || view.edit_multiple {
         let lo = model.current_frame.saturating_sub(model.onion.before);
         let hi = model.current_frame.saturating_add(model.onion.after).saturating_add(1);
         for (tag, x, is_before) in [("onion-before", geo.x_of_frame(lo), true), ("onion-after", geo.x_of_frame(hi), false)] {
@@ -625,6 +683,15 @@ fn bottom_bar(ui: &mut Ui, model: &TimelineModel, view: &TimelineViewState, layo
         if icon_button(ui, size, Icon::Onion, model.onion.enabled, true, "Onion skin").clicked() {
             events.push(TimelineEvent::ToggleOnion);
         }
+        if icon_button(ui, size, Icon::OnionOutlines, model.onion.outlines, true, "Onion skin outlines").clicked() {
+            events.push(TimelineEvent::ToggleOnionOutlines);
+        }
+        if icon_button(ui, size, Icon::EditMultiple, view.edit_multiple, true, "Edit multiple frames").clicked() {
+            events.push(TimelineEvent::ToggleEditMultiple);
+        }
+        if icon_button(ui, size, Icon::AutoKeyframe, view.auto_keyframe, true, "Auto keyframe: changing a held frame makes it a keyframe").clicked() {
+            events.push(TimelineEvent::ToggleAutoKeyframe);
+        }
         ui.add_space(12.0);
         let seconds = if model.fps > 0.0 { f32_from_u32(model.current_frame) / model.fps } else { 0.0 };
         ui.label(
@@ -639,9 +706,40 @@ fn bottom_bar(ui: &mut Ui, model: &TimelineModel, view: &TimelineViewState, layo
                 let (w, s) = layout.geo.zoom_about(layout.geo.grid.center().x, view.frame_width / 1.25);
                 events.push(TimelineEvent::Zoom { frame_width: w, scroll_x: s });
             }
+            ui.menu_button("Frame View", |ui| frame_view_menu(ui, view, &mut events));
         });
     });
     events
+}
+
+/// The Frame View menu: cell size, short rows, tinted frames and the previews.
+fn frame_view_menu(ui: &mut Ui, view: &TimelineViewState, events: &mut Vec<TimelineEvent>) {
+    let mut pick = |size: FrameSize, short: bool, tinted: bool, preview: PreviewMode| {
+        events.push(TimelineEvent::SetFrameView { size, short, tinted, preview });
+    };
+    for size in FrameSize::ALL {
+        if ui.add(egui::Button::selectable(view.frame_size == size, size.label())).clicked() {
+            pick(size, view.short_rows, view.tinted_frames, view.preview);
+            ui.close();
+        }
+    }
+    ui.separator();
+    if ui.add(egui::Button::selectable(view.short_rows, "Short")).clicked() {
+        pick(view.frame_size, !view.short_rows, view.tinted_frames, view.preview);
+        ui.close();
+    }
+    if ui.add(egui::Button::selectable(view.tinted_frames, "Tinted Frames")).clicked() {
+        pick(view.frame_size, view.short_rows, !view.tinted_frames, view.preview);
+        ui.close();
+    }
+    ui.separator();
+    for (label, mode) in [("Preview", PreviewMode::Preview), ("Preview in Context", PreviewMode::InContext)] {
+        let on = view.preview == mode;
+        if ui.add(egui::Button::selectable(on, label)).clicked() {
+            pick(view.frame_size, view.short_rows, view.tinted_frames, if on { PreviewMode::Off } else { mode });
+            ui.close();
+        }
+    }
 }
 
 #[cfg(test)]
