@@ -356,7 +356,12 @@ impl TextLayout {
         while local > 0 && !text.is_char_boundary(local) {
             local = local.saturating_sub(1);
         }
-        let Some(cluster) = Cluster::from_byte_index(&para.layout, local.saturating_add(para.prefix)) else { return offset..offset };
+        let Some(cluster) = Cluster::from_byte_index(&para.layout, local.saturating_add(para.prefix)) else {
+            // No cluster here (text with no glyphs at all, for instance a lone zero-width no-break space): an empty range
+            // at the offset, kept inside the paragraph.
+            let at = para.start.saturating_add(local);
+            return at..at;
+        };
         let r = cluster.text_range();
         let before = Cursor::from_byte_index(&para.layout, r.start, ParleyAffinity::Downstream).geometry(&para.layout, 0.0);
         let after = Cursor::from_byte_index(&para.layout, r.end, ParleyAffinity::Upstream).geometry(&para.layout, 0.0);
