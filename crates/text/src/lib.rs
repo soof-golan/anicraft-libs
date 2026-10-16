@@ -36,6 +36,7 @@
 pub mod model;
 pub mod script;
 
+mod cache;
 mod engine;
 mod extract;
 mod fonts;

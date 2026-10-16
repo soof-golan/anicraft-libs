@@ -18,6 +18,7 @@ use parley::layout::{Alignment as ParleyAlignment, AlignmentOptions, IndentOptio
 use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, GenericFamily, OverflowWrap, StyleProperty};
 use parley::{Layout, LayoutContext};
 
+use crate::cache::ShapeCache;
 use crate::extract::copy_lines;
 use crate::fonts::{Fonts, ResolvedFont};
 use crate::guard::guarded;
@@ -49,6 +50,7 @@ pub struct TextEngine {
     fonts: Fonts,
     lcx: LayoutContext<Rgba8>,
     outlines: OutlineCache,
+    shapes: ShapeCache,
     language: Option<Language>,
     /// Tests make the next shaping attempts panic, to exercise the fallbacks.
     #[cfg(test)]
@@ -100,6 +102,7 @@ impl TextEngine {
             fonts,
             lcx: LayoutContext::new(),
             outlines: OutlineCache::default(),
+            shapes: ShapeCache::default(),
             language: None,
             #[cfg(test)]
             inject_panics: 0,
@@ -109,6 +112,7 @@ impl TextEngine {
     /// Registers font data (TTF, OTF, or a collection) and returns the family names it provides. Registered fonts
     /// are found by name like installed ones, and when the machine has no generic sans serif the first one stands in.
     pub fn register_font(&mut self, bytes: Vec<u8>) -> Vec<String> {
+        self.shapes.clear();
         self.fonts.register(bytes)
     }
 
@@ -136,6 +140,7 @@ impl TextEngine {
     /// characters. `None`, or an invalid tag, leaves the choice to the fonts.
     pub fn set_language(&mut self, tag: Option<&str>) {
         self.language = tag.and_then(|t| Language::parse(t).ok());
+        self.shapes.clear();
     }
 
     /// Turns a laid-out text into display nodes (filled glyph outlines, underlines), reusing cached outlines.
@@ -299,6 +304,31 @@ impl TextEngine {
             Direction::Ltr => LRM,
             Direction::Rtl => RLM,
         };
+        let cached = if scrub { None } else { self.shapes.get(paragraph) };
+        let layout = if let Some(layout) = cached {
+            layout
+        } else {
+            let layout = self.build_layout(paragraph, prefix, scrub);
+            if !scrub {
+                self.shapes.insert(paragraph, &layout);
+            }
+            layout
+        };
+        Shaped {
+            layout,
+            start,
+            len: paragraph.text_len(),
+            text: paragraph.text(),
+            prefix: prefix.len(),
+            alignment: paragraph.alignment,
+            margin_left: finite(paragraph.margin_left, 0.0).clamp(0.0, MAX_EXTENT),
+            margin_right: finite(paragraph.margin_right, 0.0).clamp(0.0, MAX_EXTENT),
+            spacing: finite(paragraph.line_spacing, 0.0).clamp(-MAX_EXTENT, MAX_EXTENT),
+        }
+    }
+
+    /// Shapes `paragraph` (behind the direction mark `prefix`) into a layout that is not yet broken into lines.
+    fn build_layout(&mut self, paragraph: &Paragraph, prefix: &str, scrub: bool) -> Layout<Rgba8> {
         let mut ptext = String::from(prefix);
         let mut spans: Vec<Range<usize>> = Vec::with_capacity(paragraph.runs.len());
         let mut sanitizer = Sanitizer::new(scrub);
@@ -335,17 +365,7 @@ impl TextEngine {
         if indent != 0.0 {
             layout.set_text_indent(f64_to_f32(indent), IndentOptions::default());
         }
-        Shaped {
-            layout,
-            start,
-            len: paragraph.text_len(),
-            text: paragraph.text(),
-            prefix: prefix.len(),
-            alignment: paragraph.alignment,
-            margin_left: finite(paragraph.margin_left, 0.0).clamp(0.0, MAX_EXTENT),
-            margin_right: finite(paragraph.margin_right, 0.0).clamp(0.0, MAX_EXTENT),
-            spacing: finite(paragraph.line_spacing, 0.0).clamp(-MAX_EXTENT, MAX_EXTENT),
-        }
+        layout
     }
 
     /// The font of a run: the author's families (a name that is not an installed family is resolved like
@@ -493,6 +513,22 @@ mod tests {
         // The engine keeps working afterwards.
         let after = engine.layout(&text, Some(300.0));
         assert_eq!(after.lines.len(), normal.lines.len());
+    }
+
+    #[test]
+    fn cached_shaping_gives_the_same_layout_at_any_width_and_alignment() {
+        let mut text = RichText::plain("ab שלום (עולם) 054-1234567 mixed words that wrap\nsecond שורה");
+        let mut warm = TextEngine::new();
+        for (alignment, width) in [(Alignment::Start, 90.0), (Alignment::Justify, 60.0), (Alignment::Right, 200.0), (Alignment::Start, 90.0)] {
+            for paragraph in &mut text.paragraphs {
+                paragraph.alignment = alignment;
+            }
+            let cached = serde_json::to_string(&warm.layout(&text, Some(width))).unwrap_or_default();
+            warm.shapes.clear();
+            let fresh = serde_json::to_string(&warm.layout(&text, Some(width))).unwrap_or_default();
+            assert_ne!(fresh, "");
+            assert_eq!(cached, fresh, "{alignment:?} at {width}");
+        }
     }
 
     #[test]
