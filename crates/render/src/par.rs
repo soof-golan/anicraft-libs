@@ -8,12 +8,26 @@ const PARALLEL_MIN_BYTES: usize = 256 * 1024;
 /// Bytes handed to one rayon task (a multiple of 4 so tasks start on pixel boundaries).
 const TASK_BYTES: usize = 64 * 1024;
 
-/// Calls `f` with every RGBA pixel of `data`.
+/// Replaces every RGBA pixel of `data` with `f(pixel)`. `f` must depend on the pixel alone: a pixel equal to the one
+/// before it reuses that result, so flat areas cost one call per run instead of one per pixel.
 pub fn for_each_pixel(data: &mut [u8], f: impl Fn(&mut [u8; 4]) + Sync + Send) {
+    let run = |bytes: &mut [u8]| {
+        let mut last: Option<([u8; 4], [u8; 4])> = None;
+        for px in bytes.as_chunks_mut::<4>().0 {
+            match last {
+                Some((input, output)) if *px == input => *px = output,
+                _ => {
+                    let input = *px;
+                    f(px);
+                    last = Some((input, *px));
+                }
+            }
+        }
+    };
     if data.len() < PARALLEL_MIN_BYTES {
-        data.as_chunks_mut::<4>().0.iter_mut().for_each(f);
+        run(data);
     } else {
-        data.par_chunks_mut(TASK_BYTES).for_each(|chunk| chunk.as_chunks_mut::<4>().0.iter_mut().for_each(&f));
+        data.par_chunks_mut(TASK_BYTES).for_each(run);
     }
 }
 
