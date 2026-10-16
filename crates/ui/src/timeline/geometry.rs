@@ -166,16 +166,17 @@ impl TimelineGeometry {
         (width, scroll)
     }
 
-    /// The `scroll_x` that makes `frame` visible with a little margin, or `None` when it already is.
+    /// The `scroll_x` that puts `frame` in the middle of the grid, or `None` when it is already visible with a
+    /// little margin. Revealing centres the frame instead of pinning it to an edge, so there is room on both sides
+    /// to see where it is going (and playback pages half a screen at a time rather than every few frames).
     #[must_use]
     pub fn scroll_to_reveal(&self, frame: u32) -> Option<f32> {
         let left = f32_from_u32(frame) * self.frame_width;
         let right = left + self.frame_width;
         let margin = self.frame_width * 2.0;
-        if left - margin < self.scroll_x {
-            Some((left - margin).max(0.0))
-        } else if right + margin > self.scroll_x + self.grid.width() {
-            Some(right + margin - self.grid.width())
+        if left - margin < self.scroll_x || right + margin > self.scroll_x + self.grid.width() {
+            let centred = (left + right).mul_add(0.5, -(self.grid.width() * 0.5));
+            Some(centred.max(0.0))
         } else {
             None
         }
@@ -273,6 +274,22 @@ mod tests {
         assert!(g.scroll_to_reveal(100).is_some_and(|s| s > 0.0));
         g.scroll_x = 500.0;
         assert_eq!(g.scroll_to_reveal(0), Some(0.0));
+    }
+
+    #[test]
+    fn reveal_centres_the_frame() {
+        let mut g = geo();
+        // Frame 100 spans x 1000..1010; the 600 wide grid centred on it starts at 1005 - 300.
+        let scroll = g.scroll_to_reveal(100).unwrap();
+        assert!((scroll - 705.0).abs() < 1e-3);
+        g.scroll_x = scroll;
+        let centre = g.x_center_of_frame(100);
+        assert!((centre - g.grid.center().x).abs() < 1e-3, "the playhead is in the middle, not at an edge");
+        assert!(g.scroll_to_reveal(100).is_none());
+        // A frame left of the view is centred too, clamped at the start of the timeline.
+        assert!((g.scroll_to_reveal(20).unwrap() - 0.0).abs() < 1e-3);
+        assert!((g.scroll_to_reveal(60).unwrap() - 305.0).abs() < 1e-3);
+        assert!(g.scroll_to_reveal(90).is_none());
     }
 
     #[test]
