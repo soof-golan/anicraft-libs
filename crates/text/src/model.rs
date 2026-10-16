@@ -155,7 +155,7 @@ impl Paragraph {
             } else if pos >= local {
                 tail.push(run.clone());
             } else {
-                let cut = snap_down(&run.text, local.saturating_sub(pos));
+                let cut = run.text.floor_char_boundary(local.saturating_sub(pos));
                 head.push(run.with_text(run.text.get(..cut).unwrap_or_default()));
                 tail.push(run.with_text(run.text.get(cut..).unwrap_or_default()));
             }
@@ -325,8 +325,8 @@ impl RichText {
                 if a >= b {
                     out.push(run);
                 } else {
-                    let ca = snap_down(&run.text, a.saturating_sub(pos));
-                    let cb = snap_down(&run.text, b.saturating_sub(pos));
+                    let ca = run.text.floor_char_boundary(a.saturating_sub(pos));
+                    let cb = run.text.floor_char_boundary(b.saturating_sub(pos));
                     let piece = |r: Range<usize>| run.with_text(run.text.get(r).unwrap_or_default());
                     if ca > 0 {
                         out.push(piece(0..ca));
@@ -374,22 +374,13 @@ impl RichText {
             let end = start.saturating_add(len);
             if offset <= end || i.saturating_add(1) == self.paragraphs.len() {
                 let text = p.text();
-                let local = snap_down(&text, offset.saturating_sub(start).min(len));
+                let local = text.floor_char_boundary(offset.saturating_sub(start).min(len));
                 return Some(Location { paragraph: i, local });
             }
             start = end.saturating_add(1);
         }
         None
     }
-}
-
-/// The largest character boundary of `s` that is at most `index`.
-pub(crate) fn snap_down(s: &str, index: usize) -> usize {
-    let mut i = index.min(s.len());
-    while i > 0 && !s.is_char_boundary(i) {
-        i = i.saturating_sub(1);
-    }
-    i
 }
 
 #[cfg(test)]

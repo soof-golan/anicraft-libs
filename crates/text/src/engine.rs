@@ -179,7 +179,7 @@ impl TextEngine {
             shaped.push(self.shape_paragraph(&Paragraph::default(), 0));
         }
         let mut plain = text.plain_text();
-        plain.truncate(crate::model::snap_down(&plain, end));
+        plain.truncate(plain.floor_char_boundary(end));
 
         // Break lines. Without a width the box is as wide as the widest paragraph, and every paragraph is aligned in it.
         let margins = |s: &Shaped| s.margin_left + s.margin_right;

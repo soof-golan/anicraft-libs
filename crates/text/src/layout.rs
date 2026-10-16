@@ -13,7 +13,6 @@ use parley::editing::{Cursor, Selection};
 use parley::layout::{Affinity as ParleyAffinity, Cluster, Layout};
 use serde::{Serialize, Serializer};
 
-use crate::model::snap_down;
 use crate::motion::{Affinity, Caret};
 
 /// Width of the rectangle that shows a selected paragraph break, as a fraction of the line height.
@@ -165,7 +164,7 @@ impl ParaLayout {
     /// range of a multi-character ligature cluster evenly by bytes, which can land inside a character.)
     pub fn global(&self, index: usize) -> usize {
         let local = index.saturating_sub(self.prefix).min(self.len);
-        self.start.saturating_add(snap_down(&self.text, local))
+        self.start.saturating_add(self.text.floor_char_boundary(local))
     }
 
     /// Parley byte index of plain-text offset `offset`.
@@ -278,11 +277,7 @@ impl TextLayout {
     /// it.
     #[must_use]
     pub fn caret_at(&self, offset: usize) -> Caret {
-        let mut offset = offset.min(self.text.len());
-        while offset > 0 && !self.text.is_char_boundary(offset) {
-            offset = offset.saturating_sub(1);
-        }
-        Caret { offset, affinity: Affinity::Downstream }
+        Caret { offset: self.text.floor_char_boundary(offset), affinity: Affinity::Downstream }
     }
 
     /// The caret nearest to `point`: the line is picked by y, the character by x, and the side of the character by
@@ -356,10 +351,7 @@ impl TextLayout {
         if local >= para.len {
             local = para.len.saturating_sub(1);
         }
-        let text = self.text.get(para.start..).unwrap_or_default();
-        while local > 0 && !text.is_char_boundary(local) {
-            local = local.saturating_sub(1);
-        }
+        local = self.text.get(para.start..).unwrap_or_default().floor_char_boundary(local);
         let Some(cluster) = Cluster::from_byte_index(&para.layout, local.saturating_add(para.prefix)) else {
             // No cluster here (text with no glyphs at all, for instance a lone zero-width no-break space): an empty range
             // at the offset, kept inside the paragraph.
