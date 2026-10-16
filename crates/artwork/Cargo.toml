@@ -32,7 +32,7 @@ harness = false
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
 anim-render = { workspace = true }
-png = { workspace = true }
+anim-testkit = { workspace = true }
 serde_json = { workspace = true }
 photocraft-psd = { workspace = true, features = ["testgen"] }
 proptest = { workspace = true }

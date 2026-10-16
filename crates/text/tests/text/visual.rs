@@ -108,11 +108,10 @@ fn assert_golden(name: &str, canvas: &Canvas) {
         eprintln!("no golden for {name}");
         return;
     };
-    let mut reader = png::Decoder::new(std::io::BufReader::new(file)).read_info().expect("golden header");
-    let mut buf = vec![0u8; reader.output_buffer_size().expect("golden size")];
-    let info = reader.next_frame(&mut buf).expect("golden pixels");
-    assert_eq!((info.width, info.height), (canvas.width, canvas.height), "{name}: golden size");
-    let bytes = &buf[..info.buffer_size()];
+    drop(file);
+    let golden = anim_testkit::read_png(&path).expect("golden pixels");
+    assert_eq!((golden.width, golden.height), (canvas.width, canvas.height), "{name}: golden size");
+    let bytes = &golden.rgba;
     let differing = bytes.chunks(4).zip(canvas.rgba.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 24)).count();
     let pixels = (canvas.width as usize) * (canvas.height as usize);
     assert!(differing * 500 <= pixels, "{name}: {differing} of {pixels} pixels differ from the golden");

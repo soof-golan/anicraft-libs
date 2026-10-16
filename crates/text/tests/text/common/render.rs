@@ -14,8 +14,6 @@
     reason = "picture helpers on small known-good fixture numbers; a failure is a failed test"
 )]
 
-use std::fs::File;
-use std::io::BufWriter;
 use std::path::PathBuf;
 
 use anim_core::kurbo::Shape;
@@ -26,9 +24,7 @@ use anim_text::{Affinity, Caret, RichText, TextEngine, TextLayout};
 
 /// Where visual output goes: `ANICRAFT_VISUAL_OUT`. `None` (unset) skips writing.
 pub fn out_dir() -> Option<PathBuf> {
-    let dir = PathBuf::from(std::env::var_os("ANICRAFT_VISUAL_OUT")?).join("anim-text");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+    anim_testkit::out_dir("anim-text")
 }
 
 /// The fixture JSON under `tests/fixtures/visual`.
@@ -85,11 +81,7 @@ impl Canvas {
     }
 
     pub fn save(&self, path: &std::path::Path) {
-        let file = BufWriter::new(File::create(path).expect("create png"));
-        let mut encoder = png::Encoder::new(file, self.width, self.height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        encoder.write_header().and_then(|mut w| w.write_image_data(&self.rgba)).expect("write png");
+        anim_testkit::write_png(path, self.width, self.height, &self.rgba).expect("write png");
     }
 }
 

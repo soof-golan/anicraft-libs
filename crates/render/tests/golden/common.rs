@@ -2,8 +2,6 @@
 
 #![allow(dead_code)]
 
-use std::fs::File;
-use std::io::BufWriter;
 use std::path::PathBuf;
 
 use anim_core::kurbo::{Circle, Shape};
@@ -148,21 +146,14 @@ pub fn max_diff(a: &Image, b: &Image) -> u8 {
 
 /// Where test output goes: `$ANICRAFT_VISUAL_OUT/anim-render`, or nowhere when the variable is unset (CI).
 pub fn scratch_dir() -> Option<PathBuf> {
-    let dir = PathBuf::from(std::env::var_os("ANICRAFT_VISUAL_OUT")?).join("anim-render");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+    anim_testkit::out_dir("anim-render")
 }
 
 /// Writes `image` as a straight-alpha PNG named `name` (without extension) when `ANICRAFT_VISUAL_OUT` is set.
 /// Failures are ignored: the PNGs are for people to look at, not part of the assertions.
 pub fn save(name: &str, image: &Image) {
     let Some(dir) = scratch_dir() else { return };
-    let Ok(file) = File::create(dir.join(format!("{name}.png"))) else { return };
-    let mut encoder = png::Encoder::new(BufWriter::new(file), image.width, image.height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let Ok(mut writer) = encoder.write_header() else { return };
-    let _ = writer.write_image_data(&anim_render::straight_rgba(image));
+    let _ = anim_testkit::write_png(&dir.join(format!("{name}.png")), image.width, image.height, &anim_render::straight_rgba(image));
 }
 
 /// A cheap deterministic pseudo-random sequence for hand-rolled fuzzing.

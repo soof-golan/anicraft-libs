@@ -26,6 +26,7 @@ anim-scene = { path = "crates/scene" }
 anim-script = { path = "crates/script" }
 anim-session = { path = "crates/session" }
 anim-shape = { path = "crates/shape" }
+anim-testkit = { path = "crates/testkit" }
 anim-text = { path = "crates/text" }
 anim-timeline = { path = "crates/timeline" }
 anim-ui = { path = "crates/ui" }

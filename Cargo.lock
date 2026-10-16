@@ -184,11 +184,11 @@ dependencies = [
  "anim-core",
  "anim-display",
  "anim-render",
+ "anim-testkit",
  "criterion",
  "image",
  "kurbo",
  "photocraft-psd",
- "png",
  "proptest",
  "serde",
  "serde_json",
@@ -312,8 +312,8 @@ dependencies = [
  "anim-core",
  "anim-display",
  "anim-shape",
+ "anim-testkit",
  "criterion",
- "png",
  "proptest",
  "rayon",
  "serde",
@@ -392,18 +392,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "anim-testkit"
+version = "0.1.0"
+dependencies = [
+ "png",
+]
+
+[[package]]
 name = "anim-text"
 version = "0.1.0"
 dependencies = [
  "anim-core",
  "anim-display",
  "anim-render",
+ "anim-testkit",
  "criterion",
  "fontique",
  "icu_properties",
  "parley",
  "parley_data",
- "png",
  "proptest",
  "serde",
  "serde_json",
@@ -420,6 +427,7 @@ dependencies = [
  "anim-render",
  "anim-scene",
  "anim-shape",
+ "anim-testkit",
  "anim-text",
  "criterion",
  "png",

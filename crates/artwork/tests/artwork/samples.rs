@@ -40,12 +40,7 @@ fn render_to_scratch(tree: &ArtworkTree, name: &str) -> Vec<u8> {
 }
 
 fn write_png(path: &Path, width: u32, height: u32, rgba: &[u8]) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let file = std::fs::File::create(path).unwrap();
-    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header().unwrap().write_image_data(rgba).unwrap();
+    anim_testkit::write_png(path, width, height, rgba).unwrap();
 }
 
 #[test]

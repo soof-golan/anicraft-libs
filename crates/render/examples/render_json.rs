@@ -52,10 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let mut renderer = Renderer::new();
     let image = renderer.render(&list, &images, &options)?;
-    let mut encoder = png::Encoder::new(BufWriter::new(File::create(output)?), image.width, image.height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(&straight_rgba(&image))?;
+    anim_testkit::write_png(std::path::Path::new(&output), image.width, image.height, &straight_rgba(&image))?;
     println!("{}", serde_json::to_string(&renderer.stats())?);
     Ok(())
 }

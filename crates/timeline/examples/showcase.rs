@@ -7,8 +7,6 @@
 //! ```
 
 use std::error::Error;
-use std::fs::File;
-use std::io::BufWriter;
 
 use anim_core::kurbo::{Circle, Shape};
 use anim_core::{Affine, BezPath, Point, Rgba8, Size};
@@ -213,10 +211,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let options = RenderOptions::for_stage(sheet.size).with_view(Affine::scale(2.0)).with_antialias(true);
     let options = RenderOptions { width: options.width.saturating_mul(2), height: options.height.saturating_mul(2), ..options };
     let image = Renderer::new().render(&sheet, ev.images(), &options)?;
-    let mut encoder = png::Encoder::new(BufWriter::new(File::create(&out)?), image.width, image.height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(&straight_rgba(&image))?;
+    anim_testkit::write_png(std::path::Path::new(&out), image.width, image.height, &straight_rgba(&image))?;
     println!("wrote {out} ({}x{})", image.width, image.height);
     Ok(())
 }

@@ -6,8 +6,6 @@
 //! ```
 
 use std::error::Error;
-use std::fs::File;
-use std::io::BufWriter;
 use std::ops::Range;
 
 use anim_core::kurbo::Shape;
@@ -190,10 +188,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let list = DisplayList { size: Size::new(WIDTH, height), background: Some(Rgba8::opaque(238, 241, 247)), nodes };
     let options = RenderOptions::scaled_stage(list.size, 1.5);
     let image = Renderer::new().render(&list, &ImageStore::new(), &options)?;
-    let mut encoder = png::Encoder::new(BufWriter::new(File::create(&out)?), image.width, image.height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(&straight_rgba(&image))?;
+    anim_testkit::write_png(std::path::Path::new(&out), image.width, image.height, &straight_rgba(&image))?;
     println!("wrote {out} ({}x{})", image.width, image.height);
     Ok(())
 }

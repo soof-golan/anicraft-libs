@@ -125,16 +125,7 @@ fn straight(image: &Image) -> Vec<u8> {
 
 /// Writes `image` as a PNG to `path`.
 pub fn write_png(image: &Image, path: &std::path::Path) {
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let Ok(file) = std::fs::File::create(path) else { return };
-    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), image.width, image.height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    if let Ok(mut writer) = encoder.write_header() {
-        let _ = writer.write_image_data(&straight(image));
-    }
+    let _ = anim_testkit::write_png(path, image.width, image.height, &straight(image));
 }
 
 /// Saves a render for inspection under the scratch directory.
@@ -186,11 +177,10 @@ pub fn golden(image: &Image, name: &str) {
         write_png(image, &path);
         return;
     };
-    let mut reader = png::Decoder::new(std::io::BufReader::new(file)).read_info().unwrap();
-    let mut buf = vec![0u8; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    assert_eq!((info.width, info.height), (image.width, image.height), "{name}: golden size");
+    drop(file);
+    let golden = anim_testkit::read_png(&path).unwrap();
+    assert_eq!((golden.width, golden.height), (image.width, image.height), "{name}: golden size");
     let want = straight(image);
-    let bad = buf.chunks_exact(4).zip(want.chunks_exact(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 6)).count();
+    let bad = golden.rgba.chunks_exact(4).zip(want.chunks_exact(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 6)).count();
     assert!(bad * 500 <= (image.width * image.height) as usize, "{name}: {bad} pixels differ from the golden");
 }

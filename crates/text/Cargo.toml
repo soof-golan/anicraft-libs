@@ -28,7 +28,7 @@ harness = false
 [dev-dependencies]
 anim-render = { workspace = true }
 criterion = { version = "0.8", default-features = false }
-png = { workspace = true }
+anim-testkit = { workspace = true }
 proptest = { workspace = true }
 # `float_roundtrip`: glyph outlines are f64 values that must survive JSON exactly (the default parser can be 1 ulp off).
 serde_json = { workspace = true, features = ["float_roundtrip"] }

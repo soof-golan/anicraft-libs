@@ -27,4 +27,5 @@ harness = false
 [dev-dependencies]
 anim-render = { workspace = true }
 criterion = { version = "0.8", default-features = false }
+anim-testkit = { workspace = true }
 proptest = { workspace = true }

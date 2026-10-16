@@ -1,0 +1,15 @@
+[package]
+name = "anim-testkit"
+description = "Test support shared by the AniCraft family: PNG read and write, nearest-neighbour crops, goldens and visual output folders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+png = { workspace = true }
