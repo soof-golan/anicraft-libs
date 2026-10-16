@@ -166,11 +166,8 @@ fn benches(c: &mut Criterion) {
     let mut group = c.benchmark_group("artwork");
     group.sample_size(10);
 
-    let mut inputs: Vec<(&str, Vec<u8>)> = vec![
-        ("psd_600_layers", many_layers_psd()),
-        ("psd_huge_masked_layer", big_masked_layer_psd()),
-        ("psd_wide_group_mask", wide_group_mask_psd()),
-    ];
+    let mut inputs: Vec<(&str, Vec<u8>)> =
+        vec![("psd_600_layers", many_layers_psd()), ("psd_huge_masked_layer", big_masked_layer_psd()), ("psd_wide_group_mask", wide_group_mask_psd())];
     for (name, rel) in [
         ("sample_female_anchor_psd", "chproj_full/news anchors/Ch Media/Gathered Media/female_anchor.psd"),
         ("sample_male_anchor_psd", "chproj_full/news anchors/Ch Media/Gathered Media/male_anchor.psd"),
