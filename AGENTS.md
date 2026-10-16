@@ -73,6 +73,34 @@ this loop before its work counts as done:
 5. **Lock it in.** Turn the checked points into assertions (pixel probes with a tolerance, geometry checks), and keep
    the PNG as a golden for that fixture. Copy one representative image per crate to `/mnt/data/anim/scratch/screenshots/`.
 
+## After it is correct: profile, then simplify
+
+Once a component passes visual verification, make it faster and smaller. Correctness tests and goldens are the safety
+net: they must stay green, with identical output, through every change below.
+
+1. **Profile for real.** Add benchmarks (`divan` or `criterion`, under `benches/`) on realistic and worst-case inputs:
+   the sample files where they exist, and the synthetic stress fixtures. Benchmarks are the one place to use the
+   release profile. Profile the hot paths with `perf record --call-graph dwarf`, `samply`, or `cargo flamegraph`,
+   whichever is installed, and keep the flamegraph SVGs under `/mnt/data/anim/scratch/perf/<crate>/`. Record before and
+   after numbers in the commit message.
+2. **Fix what the profile shows.** Look for avoidable allocations and clones in loops, repeated parsing or layout,
+   quadratic scans, missing caches (keyed by content, with bounded size), work that can move to rayon, and per-pixel
+   work that can be per-span. Do not guess: every optimisation commit cites the measurement that justified it.
+3. **Simplify.**
+   - Delete dead code, unused options and speculative generality.
+   - Merge near-duplicate functions and types.
+   - Replace hand-written code with a std or blessed-crate equivalent.
+   - Flatten needless layers.
+   - Fewer lines with the same behaviour is a win.
+4. **Factor across crates.** When two or more crates in this family carry the same helper, for example:
+   - byte cursors, XML attribute helpers, zip handling, colour or matrix maths;
+   - Tick conversions, test crop/zoom helpers, PNG golden comparison;
+
+   move it into the lowest shared crate that fits, such as `anim-core`, or a new small crate in anicraft-libs (for
+   example `anim-testkit` for test helpers). Then switch every user over and delete the copies. App repos pick the
+   change up by updating their anicraft-libs git dependency.
+5. Land each step as its own small commit: `perf(<crate>): ...`, `refactor(<crate>): ...`, `chore: remove ...`.
+
 ## Building: always through the job queue
 
 Never run `cargo` directly for builds, checks, clippy or tests. Use the queue so parallel agents share the machine:
