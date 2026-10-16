@@ -151,21 +151,40 @@ fn voicing(x: &[f32], rate: f32) -> f32 {
     let n = x.len();
     let lo = samples_for(1.0 / 400.0, rate, 2);
     let hi = samples_for(1.0 / 70.0, rate, 3).min(n / 2);
+    // Running sums of squares: the energy of any prefix or suffix is one subtraction instead of a pass over the frame.
+    let mut squares = Vec::with_capacity(n.saturating_add(1));
+    squares.push(0.0_f64);
+    let mut total = 0.0_f64;
+    for v in x {
+        total += f64::from(*v) * f64::from(*v);
+        squares.push(total);
+    }
     let mut best = 0.0_f32;
     for lag in lo..=hi {
         let (Some(a), Some(b)) = (x.get(..n.saturating_sub(lag)), x.get(lag..)) else { continue };
-        let (mut num, mut ea, mut eb) = (0.0_f32, 0.0_f32, 0.0_f32);
-        for (p, q) in a.iter().zip(b) {
-            num = p.mul_add(*q, num);
-            ea = p.mul_add(*p, ea);
-            eb = q.mul_add(*q, eb);
-        }
-        let denom = (ea * eb).sqrt();
+        let (Some(&head), Some(&all), Some(&skip)) = (squares.get(a.len()), squares.get(n), squares.get(lag)) else { continue };
+        let denom = (head * (all - skip)).sqrt();
         if denom > 1e-12 {
-            best = best.max(num / denom);
+            best = best.max(anim_core::num::f64_to_f32(f64::from(dot(a, b)) / denom));
         }
     }
     best.clamp(0.0, 1.0)
+}
+
+/// Dot product with eight independent accumulators so the loop vectorises. A separate multiply and add: without a
+/// target FMA feature `mul_add` is a call into libm, many times slower.
+#[allow(clippy::suboptimal_flops, reason = "mul_add is a libm call on baseline x86-64")]
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    let mut lanes = [0.0_f32; 8];
+    let (a8, a_rest) = a.as_chunks::<8>();
+    let (b8, b_rest) = b.as_chunks::<8>();
+    for (p, q) in a8.iter().zip(b8) {
+        for ((lane, x), y) in lanes.iter_mut().zip(p).zip(q) {
+            *lane += x * y;
+        }
+    }
+    let tail: f32 = a_rest.iter().zip(b_rest).map(|(x, y)| x * y).sum();
+    lanes.iter().sum::<f32>() + tail
 }
 
 #[cfg(test)]
