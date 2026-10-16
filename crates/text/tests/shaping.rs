@@ -40,9 +40,20 @@ fn bold_and_italic_change_the_shaped_glyphs_or_widths() {
     let bold = engine.layout(&RichText::new(vec![Paragraph::new(vec![Run { bold: true, ..run("Quick brown fox") }])]), None);
     let italic = engine.layout(&RichText::new(vec![Paragraph::new(vec![Run { italic: true, ..run("Quick brown fox") }])]), None);
     // Glyph ids can be shared between the weights of one family, so look at the font face, the synthesis flags and widths.
-    // A variable system font (macOS) keeps one face and changes the variation coordinates instead.
-    let differs = |a: &anim_text::GlyphRun, b: &anim_text::GlyphRun| a.font.id != b.font.id || a.font.coords != b.font.coords;
-    assert!(bold.runs[0].embolden || differs(&bold.runs[0], &plain.runs[0]), "bold must come from a bold face or be synthesised");
+    // A system font collection (macOS) keeps one file and picks the face by index, a variable font changes the variation
+    // coordinates instead.
+    let differs = |a: &anim_text::GlyphRun, b: &anim_text::GlyphRun| a.font.id != b.font.id || a.font.index != b.font.index || a.font.coords != b.font.coords;
+    let (b, p) = (&bold.runs[0], &plain.runs[0]);
+    assert!(
+        b.embolden || differs(b, p),
+        "bold must come from a bold face or be synthesised: bold {:?}/{}/{:?} plain {:?}/{}/{:?}",
+        b.font.id,
+        b.font.index,
+        b.font.coords,
+        p.font.id,
+        p.font.index,
+        p.font.coords
+    );
     assert!(italic.runs[0].skew_degrees > 0.0 || differs(&italic.runs[0], &plain.runs[0]), "italic must come from an italic face or be synthesised");
     assert!(plain.runs[0].skew_degrees == 0.0 && !plain.runs[0].embolden);
     assert_eq!(glyph_ids(&plain).len(), glyph_ids(&bold).len());
