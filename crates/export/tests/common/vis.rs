@@ -141,7 +141,7 @@ pub fn ffprobe() -> Option<PathBuf> {
     which("ffprobe")
 }
 
-/// Rasterises `svg` in headless Chrome at `w` x `h` (virtual time `virtual_ms` advances animations first). `None` when Chrome is absent.
+/// Rasterises `svg` in headless Chrome at `w` x `h` (animations are paused and seeked to `virtual_ms`, never waited for). `None` when Chrome is absent.
 pub fn chrome_raster(name: &str, svg: &str, w: u32, h: u32, virtual_ms: Option<u32>) -> Option<RgbaFrame> {
     let Some(chrome) = chrome() else {
         eprintln!("SKIP {name}: no Chrome found (set CHROME)");
@@ -149,6 +149,25 @@ pub fn chrome_raster(name: &str, svg: &str, w: u32, h: u32, virtual_ms: Option<u
     };
     let dir = out_dir();
     let svg_path = dir.join(format!("{name}.svg"));
+    // Wall-clock waits are racy (the timeline starts at a moment that depends on load speed), so the page seeks instead: SMIL is
+    // paused and set to the requested time, CSS animations are paused at the same offset.
+    let seeked;
+    let svg = match virtual_ms {
+        Some(ms) => {
+            let script = format!(
+                "<script>(function(){{var ms={ms};function seek(){{var s=document.documentElement;\
+                 if(s.pauseAnimations){{s.pauseAnimations();s.setCurrentTime(ms/1000);}}\
+                 if(document.getAnimations){{document.getAnimations().forEach(function(a){{a.pause();a.currentTime=ms;}});}}}}\
+                 seek();window.addEventListener('load',seek);}})();</script>\n"
+            );
+            seeked = match svg.rfind("</svg>") {
+                Some(at) => format!("{}{script}{}", &svg[..at], &svg[at..]),
+                None => svg.to_owned(),
+            };
+            seeked.as_str()
+        }
+        None => svg,
+    };
     std::fs::write(&svg_path, svg).unwrap();
     let shot = dir.join(format!("{name}.chrome.png"));
     let _ = std::fs::remove_file(&shot);
@@ -166,7 +185,7 @@ pub fn chrome_raster(name: &str, svg: &str, w: u32, h: u32, virtual_ms: Option<u
         .arg(format!("--window-size={w},{}", h + 200))
         .arg(format!("--screenshot={}", shot.display()));
     // Without a budget the screenshot can be taken before every tile is rasterised (a half-painted picture).
-    cmd.arg("--run-all-compositor-stages-before-draw").arg(format!("--virtual-time-budget={}", virtual_ms.unwrap_or(500)));
+    cmd.arg("--run-all-compositor-stages-before-draw").arg("--virtual-time-budget=500");
     let out = cmd.arg(format!("file://{}", svg_path.display())).output().unwrap();
     assert!(shot.is_file(), "Chrome wrote no screenshot: {}", String::from_utf8_lossy(&out.stderr));
     let frame = decode_png(&std::fs::read(&shot).unwrap());
