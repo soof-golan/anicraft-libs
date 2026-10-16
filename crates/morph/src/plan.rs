@@ -7,7 +7,7 @@ use anim_core::{BezPath, Point};
 use anim_shape::{EdgeShape, FillStyle, PathInput, StrokeStyle};
 
 use crate::align::{Anchor, align};
-use crate::contour::{Contour, point, to_bez_path};
+use crate::contour::{Contour, point, push_bez_path};
 use crate::style::{lerp_fill, lerp_stroke};
 use crate::{MorphMode, MorphOptions, ShapeHint};
 
@@ -184,8 +184,21 @@ fn build_items(a: &[Part], b: &[Part], forced: &Forced, anchors: &Anchors, mode:
         .collect()
 }
 
-fn lerp_chain(a: &[CubicBez], b: &[CubicBez], t: f64) -> Vec<CubicBez> {
-    a.iter().zip(b).map(|(x, y)| CubicBez::new(x.p0.lerp(y.p0, t), x.p1.lerp(y.p1, t), x.p2.lerp(y.p2, t), x.p3.lerp(y.p3, t))).collect()
+impl Item {
+    /// Appends the contour `t` of the way from `a` to `b` to `path`.
+    fn push_at(&self, path: &mut BezPath, t: f64) {
+        let chain = self.a.iter().zip(&self.b).map(|(x, y)| CubicBez::new(x.p0.lerp(y.p0, t), x.p1.lerp(y.p1, t), x.p2.lerp(y.p2, t), x.p3.lerp(y.p3, t)));
+        push_bez_path(path, chain, self.closed);
+    }
+}
+
+/// What pairing contours of two styles costs: nothing for equal styles, a little for the same index, else more.
+fn style_penalty<T: PartialEq>(from: Option<&T>, to: Option<&T>, same_index: bool) -> f64 {
+    match (from, to) {
+        (Some(p), Some(q)) if p == q => 0.0,
+        _ if same_index => 0.15,
+        _ => 0.5,
+    }
 }
 
 type StylePair = (Option<u32>, Option<u32>);
@@ -197,14 +210,11 @@ fn group_items(items: &[Item], t: f64) -> BTreeMap<StylePair, BezPath> {
     let mut groups: BTreeMap<StylePair, BezPath> = BTreeMap::new();
     let (matched, lone): (Vec<&Item>, Vec<&Item>) = items.iter().partition(|i| i.a_style.is_some() && i.b_style.is_some());
     for item in matched {
-        groups.entry((item.a_style, item.b_style)).or_default().extend(to_bez_path(&lerp_chain(&item.a, &item.b, t), item.closed).elements().iter().copied());
+        item.push_at(groups.entry((item.a_style, item.b_style)).or_default(), t);
     }
     for item in lone {
         let host = groups.keys().find(|(a, b)| (item.a_style.is_some() && *a == item.a_style) || (item.b_style.is_some() && *b == item.b_style)).copied();
-        groups
-            .entry(host.unwrap_or((item.a_style, item.b_style)))
-            .or_default()
-            .extend(to_bez_path(&lerp_chain(&item.a, &item.b, t), item.closed).elements().iter().copied());
+        item.push_at(groups.entry(host.unwrap_or((item.a_style, item.b_style))).or_default(), t);
     }
     groups
 }
@@ -225,22 +235,8 @@ impl MorphPlan {
         let ((fa, sa), (fb, sb)) = (parts(start), parts(end));
         let (fill_forced, fill_anchors) = resolve_hints(&options.hints, &fa, &fb);
         let (stroke_forced, stroke_anchors) = resolve_hints(&options.hints, &sa, &sb);
-        let fill_penalty = |x: &Part, y: &Part| -> f64 {
-            let (p, q) = (start.fill(x.style), end.fill(y.style));
-            match (p, q) {
-                (Some(p), Some(q)) if p == q => 0.0,
-                _ if x.style == y.style => 0.15,
-                _ => 0.5,
-            }
-        };
-        let stroke_penalty = |x: &Part, y: &Part| -> f64 {
-            let (p, q) = (start.stroke(x.style), end.stroke(y.style));
-            match (p, q) {
-                (Some(p), Some(q)) if p == q => 0.0,
-                _ if x.style == y.style => 0.15,
-                _ => 0.5,
-            }
-        };
+        let fill_penalty = |x: &Part, y: &Part| style_penalty(start.fill(x.style), end.fill(y.style), x.style == y.style);
+        let stroke_penalty = |x: &Part, y: &Part| style_penalty(start.stroke(x.style), end.stroke(y.style), x.style == y.style);
         Self {
             fills: build_items(&fa, &fb, &fill_forced, &fill_anchors, options.mode, &fill_penalty),
             strokes: build_items(&sa, &sb, &stroke_forced, &stroke_anchors, options.mode, &stroke_penalty),

@@ -347,14 +347,13 @@ impl Contour {
     }
 }
 
-/// A closed or open path from interpolated cubics. Cubics that are straight become lines.
-#[must_use]
-pub fn to_bez_path(segs: &[CubicBez], closed: bool) -> BezPath {
-    let mut path = BezPath::new();
-    let Some(first) = segs.first() else { return path };
+/// Appends a closed or open subpath of interpolated cubics to `path`. Cubics that are straight become lines.
+pub fn push_bez_path(path: &mut BezPath, segs: impl Iterator<Item = CubicBez>, closed: bool) {
+    let mut segs = segs.peekable();
+    let Some(first) = segs.peek() else { return };
     path.move_to(first.p0);
     for c in segs {
-        if straight(c) {
+        if straight(&c) {
             path.line_to(c.p3);
         } else {
             path.curve_to(c.p1, c.p2, c.p3);
@@ -363,7 +362,6 @@ pub fn to_bez_path(segs: &[CubicBez], closed: bool) -> BezPath {
     if closed {
         path.close_path();
     }
-    path
 }
 
 fn straight(c: &CubicBez) -> bool {
