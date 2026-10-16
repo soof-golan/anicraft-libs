@@ -383,6 +383,7 @@ dependencies = [
  "anim-core",
  "anim-display",
  "anim-render",
+ "criterion",
  "fontique",
  "icu_properties",
  "parley",
