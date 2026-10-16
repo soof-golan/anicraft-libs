@@ -7,6 +7,7 @@ use anim_core::{Affine, BlendMode, ColorTransform, Matrix3D, Point, Rgba8};
 use anim_shape::EdgeShape;
 use serde::{Deserialize, Serialize};
 
+use crate::component::ComponentInstance;
 use crate::extra::{Extra, RawXml};
 
 /// What kind of symbol: how its timeline plays inside its parent.
@@ -187,6 +188,9 @@ pub struct SymbolInstance {
     pub visible: bool,
     /// Instance name (`name`), used by `ActionScript`.
     pub name: Option<String>,
+    /// The parameters when this is a component instance (`DOMComponentInstance`).
+    #[serde(default)]
+    pub component: Option<ComponentInstance>,
     pub extra: Extra,
 }
 
@@ -211,6 +215,7 @@ impl SymbolInstance {
             cache_as_bitmap: false,
             visible: true,
             name: None,
+            component: None,
             extra: Extra::new(),
         }
     }

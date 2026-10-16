@@ -870,6 +870,51 @@ pub fn duplicate_layer(doc: &mut Document, id: &TimelineId, layer: usize) -> Res
     Ok(layer)
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Scripts and components
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Longest frame script accepted, in bytes.
+pub const MAX_SCRIPT_BYTES: usize = 1 << 20;
+
+/// Sets (or, with `None` or empty text, removes) the frame script of the keyframe at `frame`.
+///
+/// A script belongs to a keyframe, so when `frame` lies inside a span a blank keyframe is made there first, as
+/// Animate does when you type into the Actions panel on a plain frame.
+///
+/// # Errors
+/// Unknown timeline or layer, a script over [`MAX_SCRIPT_BYTES`], or the frame limit.
+pub fn set_frame_script(doc: &mut Document, id: &TimelineId, layer: usize, frame: u32, script: Option<&str>) -> Result<(), SceneError> {
+    let text = script.filter(|s| !s.trim().is_empty());
+    if text.is_some_and(|s| s.len() > MAX_SCRIPT_BYTES) {
+        return Err(SceneError::LimitExceeded("script length"));
+    }
+    check_frame(frame)?;
+    let is_key = layer_mut(doc, id, layer)?.is_keyframe(frame);
+    if !is_key {
+        if text.is_none() {
+            return Ok(());
+        }
+        make_keyframe(doc, id, layer, frame, true)?;
+    }
+    keyframe_mut(doc, id, layer, frame)?.actionscript = text.map(str::to_owned);
+    Ok(())
+}
+
+/// Sets the value of parameter `param` of the component instance `element` in the keyframe at `frame`.
+///
+/// # Errors
+/// Unknown timeline, layer, keyframe or element; [`SceneError::NoSuchItem`] when the element is not a component or
+/// has no such parameter.
+pub fn set_component_param(doc: &mut Document, id: &TimelineId, layer: usize, frame: u32, element: usize, param: &str, value: &str) -> Result<(), SceneError> {
+    let k = keyframe_mut(doc, id, layer, frame)?;
+    let count = k.elements.len();
+    let el = k.elements.get_mut(element).ok_or(SceneError::NoSuchElement { element, count })?;
+    let Element::SymbolInstance(inst) = el else { return Err(SceneError::NoSuchItem(format!("element {element} is not a component"))) };
+    let Some(component) = inst.component.as_mut() else { return Err(SceneError::NoSuchItem(format!("element {element} is not a component"))) };
+    if component.set_param(param, value) { Ok(()) } else { Err(SceneError::NoSuchItem(format!("component parameter {param}"))) }
+}
+
 #[cfg(test)]
 #[path = "edit_tests.rs"]
 mod tests;

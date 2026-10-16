@@ -28,6 +28,7 @@
 
 pub mod armature;
 pub mod bounds;
+pub mod component;
 pub mod document;
 pub mod edit;
 pub mod element;
@@ -41,6 +42,7 @@ pub mod validate;
 
 pub use armature::{Armature, ArmatureBone, ArmatureKind, Pose};
 pub use bounds::{MAX_SYMBOL_DEPTH, element_bounds, elements_bounds, timeline_bounds};
+pub use component::{ComponentInstance, ComponentParam};
 pub use document::{Document, LAYER_COLORS, TimelineId};
 pub use element::{
     BitmapInstance, ColorEffect, Element, Group, InstanceFilter, LoopMode, ShapeElement, SymbolInstance, SymbolKind, TextAlign, TextDirection, TextElement,
