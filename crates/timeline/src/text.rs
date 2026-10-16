@@ -27,6 +27,10 @@ pub fn rich_text(engine: &mut TextEngine, element: &TextElement) -> RichText {
                 let (alignment, direction) = paragraph_style(source);
                 current.alignment = alignment;
                 current.direction = direction;
+                current.line_spacing = spacing_attr(source, "lineSpacing");
+                current.indent = spacing_attr(source, "indent");
+                current.margin_left = spacing_attr(source, "leftMargin");
+                current.margin_right = spacing_attr(source, "rightMargin");
                 started = true;
             }
             if !piece.is_empty() {
@@ -62,6 +66,12 @@ fn convert_run(engine: &mut TextEngine, run: &TextRun) -> Run {
     }
 }
 
+/// A paragraph spacing (`lineSpacing`, `indent`, `leftMargin`, `rightMargin`) that XFL keeps on the text attributes,
+/// in pixels; 0 when absent or not a finite number.
+fn spacing_attr(run: &TextRun, name: &str) -> f64 {
+    run.extra.attr(name).and_then(|v| v.trim().parse::<f64>().ok()).filter(|v| v.is_finite()).unwrap_or(0.0)
+}
+
 const fn paragraph_style(run: &TextRun) -> (Alignment, Direction) {
     let alignment = match run.alignment {
         TextAlign::Left => Alignment::Left,
@@ -94,4 +104,29 @@ pub fn text_nodes(engine: &mut TextEngine, element: &TextElement) -> Vec<Node> {
         return nodes;
     }
     vec![Node::Group(anim_display::Group { transform: Affine::translate((left, 0.0)), children: nodes, ..anim_display::Group::default() })]
+}
+
+#[cfg(test)]
+mod tests {
+    use anim_scene::TextKind;
+
+    use super::*;
+
+    #[test]
+    fn paragraph_spacing_comes_from_the_text_attributes() {
+        let mut run = TextRun::new("one\rtwo", "Arial", 20.0);
+        run.extra.set_attr("lineSpacing", "6");
+        run.extra.set_attr("indent", "4.5");
+        run.extra.set_attr("leftMargin", "8");
+        run.extra.set_attr("rightMargin", "not a number");
+        let element = TextElement::new(TextKind::Static, Affine::IDENTITY, 200.0, 80.0, vec![run]);
+        let rich = rich_text(&mut TextEngine::new(), &element);
+        assert_eq!(rich.paragraphs.len(), 2);
+        for paragraph in &rich.paragraphs {
+            assert!((paragraph.line_spacing - 6.0).abs() < f64::EPSILON);
+            assert!((paragraph.indent - 4.5).abs() < f64::EPSILON);
+            assert!((paragraph.margin_left - 8.0).abs() < f64::EPSILON);
+            assert!(paragraph.margin_right.abs() < f64::EPSILON, "garbage counts as absent");
+        }
+    }
 }
