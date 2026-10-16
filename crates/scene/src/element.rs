@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::component::ComponentInstance;
 use crate::extra::{Extra, RawXml};
+use crate::primitive::Primitive;
 
 /// What kind of symbol: how its timeline plays inside its parent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -144,6 +145,10 @@ pub struct ShapeElement {
     pub matrix: Affine,
     /// Transformation point, present for drawing objects.
     pub transformation_point: Option<Point>,
+    /// Set for a Rectangle or Oval Primitive: the parameters that generate `shape` (`DOMRectangleObject`,
+    /// `DOMOvalObject`). The shape is kept in step with them by whoever edits them.
+    #[serde(default)]
+    pub primitive: Option<Box<Primitive>>,
     pub extra: Extra,
 }
 
@@ -151,7 +156,27 @@ impl ShapeElement {
     /// A merge-mode shape at the origin.
     #[must_use]
     pub const fn new(shape: EdgeShape) -> Self {
-        Self { shape, is_drawing_object: false, matrix: Affine::IDENTITY, transformation_point: None, extra: Extra::new() }
+        Self { shape, is_drawing_object: false, matrix: Affine::IDENTITY, transformation_point: None, primitive: None, extra: Extra::new() }
+    }
+
+    /// A drawing object for a primitive, placed by `matrix`.
+    #[must_use]
+    pub fn from_primitive(primitive: Primitive, matrix: Affine) -> Self {
+        let (w, h) = primitive.kind.size();
+        Self {
+            shape: primitive.build_shape(),
+            is_drawing_object: true,
+            matrix,
+            transformation_point: Some(Point::new(w / 2.0, h / 2.0)),
+            primitive: Some(Box::new(primitive)),
+            extra: Extra::new(),
+        }
+    }
+
+    /// Replaces the primitive's parameters and regenerates the shape.
+    pub fn set_primitive(&mut self, primitive: Primitive) {
+        self.shape = primitive.build_shape();
+        self.primitive = Some(Box::new(primitive));
     }
 }
 
