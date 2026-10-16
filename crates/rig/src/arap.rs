@@ -72,20 +72,18 @@ pub struct ArapSolver {
     rest: Vec<Point>,
     nbrs: Vec<Vec<(usize, f64)>>,
     roles: Vec<Role>,
-    diag: Vec<f64>,
     pinned: Vec<u32>,
     options: ArapOptions,
     diameter: f64,
-}
-
-fn at(v: &[f64], i: usize) -> f64 {
-    v.get(i).copied().unwrap_or(0.0)
-}
-
-fn set(v: &mut [f64], i: usize, x: f64) {
-    if let Some(s) = v.get_mut(i) {
-        *s = x;
-    }
+    /// The free vertices, ascending: the unknowns of the global step.
+    free: Vec<u32>,
+    /// The system matrix of the free block (the Laplacian restricted to free vertices) in compressed rows: the
+    /// diagonal of each free vertex, and the offsets of its off-diagonal entries in `cols` (positions among
+    /// `free`) and `weights`, in vertex order.
+    free_diag: Vec<f64>,
+    rows: Vec<u32>,
+    cols: Vec<u32>,
+    weights: Vec<f64>,
 }
 
 /// Best rotation `(cos, sin)` for the 2x2 covariance `[[m00, m01], [m10, m11]]` (sum of `target * rest^T`).
@@ -174,9 +172,27 @@ impl ArapSolver {
             }
         }
 
-        let diag = nbrs.iter().map(|l| l.iter().map(|&(_, w)| w).sum()).collect();
+        let free: Vec<u32> = roles.iter().enumerate().filter(|(_, r)| matches!(r, Role::Free)).map(|(i, _)| num::usize_to_u32_sat(i)).collect();
+        let mut position = vec![0_u32; n];
+        for (k, &id) in free.iter().enumerate() {
+            if let Some(p) = position.get_mut(num::u32_to_usize(id)) {
+                *p = num::usize_to_u32_sat(k);
+            }
+        }
+        let (mut free_diag, mut rows, mut cols, mut weights) = (Vec::with_capacity(free.len()), vec![0_u32], Vec::new(), Vec::new());
+        for &id in &free {
+            let list = nbrs.get(num::u32_to_usize(id)).map_or(&[][..], Vec::as_slice);
+            free_diag.push(list.iter().map(|&(_, w)| w).sum());
+            for &(j, w) in list {
+                if matches!(roles.get(j), Some(Role::Free)) {
+                    cols.push(position.get(j).copied().unwrap_or(0));
+                    weights.push(w);
+                }
+            }
+            rows.push(num::usize_to_u32_sat(cols.len()));
+        }
         let diameter = mesh.bounds().map_or(1.0, |b| b.width().hypot(b.height())).max(f64::MIN_POSITIVE);
-        Ok(Self { rest: mesh.vertices.clone(), nbrs, roles, diag, pinned: pins, options, diameter })
+        Ok(Self { rest: mesh.vertices.clone(), nbrs, roles, pinned: pins, options, diameter, free, free_diag, rows, cols, weights })
     }
 
     /// The pinned vertex ids, in the order `solve` expects targets.
@@ -277,16 +293,17 @@ impl ArapSolver {
 
     /// Solves for the free vertices given the rotations; fixed vertices keep their `q`.
     fn global_step(&self, q: &[Point], rotations: &[(f64, f64)]) -> Vec<Point> {
-        let n = self.rest.len();
-        let mut bx = vec![0.0; n];
-        let mut by = vec![0.0; n];
-        let mut xx = vec![0.0; n];
-        let mut xy = vec![0.0; n];
-        for i in 0..n {
-            if !matches!(self.roles.get(i), Some(Role::Free)) {
+        let nf = self.free.len();
+        let (mut bx, mut by) = (Vec::with_capacity(nf), Vec::with_capacity(nf));
+        let (mut xx, mut xy) = (Vec::with_capacity(nf), Vec::with_capacity(nf));
+        for &id in &self.free {
+            let i = num::u32_to_usize(id);
+            let (Some(&pi), Some(l), Some(&ri), Some(&qi)) = (self.rest.get(i), self.nbrs.get(i), rotations.get(i), q.get(i)) else {
+                for v in [&mut bx, &mut by, &mut xx, &mut xy] {
+                    v.push(0.0);
+                }
                 continue;
-            }
-            let (Some(&pi), Some(l), Some(&ri)) = (self.rest.get(i), self.nbrs.get(i), rotations.get(i)) else { continue };
+            };
             let mut b = Vec2::ZERO;
             for &(j, w) in l {
                 let (Some(&pj), Some(&rj)) = (self.rest.get(j), rotations.get(j)) else { continue };
@@ -298,93 +315,81 @@ impl ArapSolver {
                     b += qj.to_vec2() * w;
                 }
             }
-            set(&mut bx, i, b.x);
-            set(&mut by, i, b.y);
-            if let Some(&qi) = q.get(i) {
-                set(&mut xx, i, qi.x);
-                set(&mut xy, i, qi.y);
-            }
+            bx.push(b.x);
+            by.push(b.y);
+            xx.push(qi.x);
+            xy.push(qi.y);
         }
         self.cg(&bx, &mut xx);
         self.cg(&by, &mut xy);
-        (0..n)
-            .map(|i| {
-                if matches!(self.roles.get(i), Some(Role::Free)) {
-                    let p = Point::new(at(&xx, i), at(&xy, i));
-                    if p.x.is_finite() && p.y.is_finite() { p } else { q.get(i).copied().unwrap_or(Point::ZERO) }
-                } else {
-                    q.get(i).copied().unwrap_or(Point::ZERO)
-                }
-            })
-            .collect()
+        let mut out = q.to_vec();
+        for ((&id, &x), &y) in self.free.iter().zip(&xx).zip(&xy) {
+            if x.is_finite()
+                && y.is_finite()
+                && let Some(slot) = out.get_mut(num::u32_to_usize(id))
+            {
+                *slot = Point::new(x, y);
+            }
+        }
+        out
     }
 
-    /// `out = A u` where `A` is the Laplacian restricted to free vertices.
-    fn matvec(&self, u: &[f64], out: &mut [f64]) {
-        for (i, o) in out.iter_mut().enumerate() {
-            if !matches!(self.roles.get(i), Some(Role::Free)) {
-                *o = 0.0;
-                continue;
+    /// `out = A u` where `A` is the Laplacian restricted to free vertices (indexed by position among them); returns
+    /// `u . out`.
+    #[allow(clippy::indexing_slicing, reason = "rows, cols and weights are built together with the free list they index")]
+    fn matvec(&self, u: &[f64], out: &mut [f64]) -> f64 {
+        let mut dot = 0.0;
+        let mut start = 0;
+        for (((o, &uk), &d), &end) in out.iter_mut().zip(u).zip(&self.free_diag).zip(self.rows.iter().skip(1)) {
+            let end = num::u32_to_usize(end);
+            let mut s = d * uk;
+            for (&c, &w) in self.cols[start..end].iter().zip(&self.weights[start..end]) {
+                s -= w * u[num::u32_to_usize(c)];
             }
-            let mut s = self.diag.get(i).copied().unwrap_or(0.0) * at(u, i);
-            if let Some(l) = self.nbrs.get(i) {
-                for &(j, w) in l {
-                    if matches!(self.roles.get(j), Some(Role::Free)) {
-                        s -= w * at(u, j);
-                    }
-                }
-            }
+            start = end;
             *o = s;
+            dot += uk * s;
         }
+        dot
     }
 
     /// Preconditioned CG for the free block. `b` holds the right-hand side with fixed-neighbour terms already
-    /// moved over; `x` holds the starting guess on entry. Fixed entries of `x` are the fixed positions: they are
-    /// folded into `b` by the caller, so the solve works on a copy with them zeroed.
+    /// moved over, `x` the starting guess on entry and the solution on exit (both indexed by position among the free
+    /// vertices).
     fn cg(&self, b: &[f64], x: &mut [f64]) {
-        let n = x.len();
-        let free = |i: usize| matches!(self.roles.get(i), Some(Role::Free));
-        let mut u: Vec<f64> = (0..n).map(|i| if free(i) { at(x, i) } else { 0.0 }).collect();
-        let mut au = vec![0.0; n];
-        self.matvec(&u, &mut au);
-        let mut r: Vec<f64> = (0..n).map(|i| if free(i) { at(b, i) - at(&au, i) } else { 0.0 }).collect();
-        let precond = |i: usize, v: f64| {
-            let d = self.diag.get(i).copied().unwrap_or(1.0);
-            if d > 0.0 { v / d } else { v }
-        };
+        let precondition = |d: f64, v: f64| if d > 0.0 { v / d } else { v };
+        let mut au = vec![0.0; x.len()];
+        self.matvec(x, &mut au);
+        let mut r: Vec<f64> = b.iter().zip(&au).map(|(b, a)| b - a).collect();
         let bnorm = b.iter().map(|v| v * v).sum::<f64>().sqrt();
         let target = (1.0e-12 * bnorm).max(1.0e-14 * self.diameter);
-        let mut z: Vec<f64> = r.iter().enumerate().map(|(i, &v)| precond(i, v)).collect();
+        let mut z: Vec<f64> = r.iter().zip(&self.free_diag).map(|(&v, &d)| precondition(d, v)).collect();
         let mut p = z.clone();
         let mut rz: f64 = r.iter().zip(&z).map(|(a, c)| a * c).sum();
+        let mut res2: f64 = r.iter().map(|v| v * v).sum();
         for _ in 0..self.options.max_cg_iterations {
-            let rn = r.iter().map(|v| v * v).sum::<f64>().sqrt();
+            let rn = res2.sqrt();
             if rn <= target || !rn.is_finite() {
                 break;
             }
-            self.matvec(&p, &mut au);
-            let pap: f64 = p.iter().zip(&au).map(|(a, c)| a * c).sum();
+            let pap = self.matvec(&p, &mut au);
             if pap <= 0.0 || !pap.is_finite() {
                 break;
             }
             let alpha = rz / pap;
-            for ((ui, ri), (pi, api)) in u.iter_mut().zip(r.iter_mut()).zip(p.iter().zip(&au)) {
-                *ui += alpha * pi;
+            let (mut rz_new, mut res2_new) = (0.0, 0.0);
+            for ((((xi, ri), zi), (pi, api)), &d) in x.iter_mut().zip(r.iter_mut()).zip(z.iter_mut()).zip(p.iter().zip(&au)).zip(&self.free_diag) {
+                *xi += alpha * pi;
                 *ri -= alpha * api;
+                *zi = precondition(d, *ri);
+                rz_new += *ri * *zi;
+                res2_new += *ri * *ri;
             }
-            for (i, zi) in z.iter_mut().enumerate() {
-                *zi = precond(i, at(&r, i));
-            }
-            let rz_new: f64 = r.iter().zip(&z).map(|(a, c)| a * c).sum();
+            res2 = res2_new;
             let beta = if rz > 0.0 { rz_new / rz } else { 0.0 };
             rz = rz_new;
             for (pi, zi) in p.iter_mut().zip(&z) {
                 *pi = zi + beta * *pi;
-            }
-        }
-        for i in 0..n {
-            if free(i) {
-                set(x, i, at(&u, i));
             }
         }
     }
