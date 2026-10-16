@@ -198,7 +198,7 @@ mod tests {
             seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
             u32::try_from(seed >> 32).unwrap_or(0)
         };
-        let mut values = vec![0.0, -0.0, 0.5, -0.5, 1.5, 2.5, 0.125, 0.0005, 0.000_499_99, 1e-12, 999_999_999.9996, 1e9, -1e9, 1e12, f64::MIN_POSITIVE];
+        let mut values = vec![0.0, -0.0, 0.5, -0.5, 1.5, 2.5, 0.125, 0.0005, 0.000_499_99, 1e-12, 999_999_999.999_6, 1e9, -1e9, 1e12, f64::MIN_POSITIVE];
         for _ in 0..20_000 {
             let unit = |n: u32| f64::from(n) / 4_294_967_296.0;
             let exponent = i32::try_from(next_u32() % 12).unwrap_or(0) - 3;
