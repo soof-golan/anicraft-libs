@@ -27,6 +27,14 @@ pub enum Icon {
     Camera,
     Pin,
     Mic,
+    PolyStar,
+    RectanglePrimitive,
+    OvalPrimitive,
+    AddAnchor,
+    DeleteAnchor,
+    ConvertAnchor,
+    Width,
+    PaintBrush,
     // Layers and chrome.
     Eye,
     EyeOff,
@@ -212,6 +220,52 @@ fn paint_tool(c: &Canvas<'_>, icon: Icon) -> bool {
             c.open(&[(0.25, 0.45), (0.25, 0.65), (0.5, 0.78), (0.75, 0.65), (0.75, 0.45)]);
             c.line((0.5, 0.78), (0.5, 0.94));
         }
+        Icon::PolyStar => {
+            c.poly(
+                &[(0.5, 0.06), (0.62, 0.36), (0.94, 0.38), (0.69, 0.58), (0.78, 0.9), (0.5, 0.72), (0.22, 0.9), (0.31, 0.58), (0.06, 0.38), (0.38, 0.36)],
+                false,
+            );
+        }
+        Icon::RectanglePrimitive => {
+            c.rect_shape((0.12, 0.25), (0.88, 0.75), false);
+            for (x, y) in [(0.12, 0.25), (0.88, 0.25), (0.12, 0.75), (0.88, 0.75)] {
+                c.circle((x, y), 0.07, true);
+            }
+        }
+        Icon::OvalPrimitive => {
+            c.circle((0.5, 0.5), 0.34, false);
+            for (x, y) in [(0.5, 0.16), (0.84, 0.5), (0.5, 0.84), (0.16, 0.5)] {
+                c.circle((x, y), 0.07, true);
+            }
+        }
+        Icon::AddAnchor => {
+            c.poly(&[(0.4, 0.05), (0.65, 0.45), (0.5, 0.62), (0.3, 0.62), (0.15, 0.45)], false);
+            c.line((0.4, 0.62), (0.4, 0.85));
+            c.line((0.68, 0.72), (0.92, 0.72));
+            c.line((0.8, 0.6), (0.8, 0.84));
+        }
+        Icon::DeleteAnchor => {
+            c.poly(&[(0.4, 0.05), (0.65, 0.45), (0.5, 0.62), (0.3, 0.62), (0.15, 0.45)], false);
+            c.line((0.4, 0.62), (0.4, 0.85));
+            c.line((0.68, 0.72), (0.92, 0.72));
+        }
+        Icon::ConvertAnchor => {
+            c.poly(&[(0.4, 0.05), (0.65, 0.45), (0.5, 0.62), (0.3, 0.62), (0.15, 0.45)], false);
+            c.line((0.4, 0.62), (0.4, 0.85));
+            c.open(&[(0.68, 0.86), (0.8, 0.6), (0.92, 0.86)]);
+        }
+        Icon::Width => {
+            c.open(&[(0.1, 0.5), (0.35, 0.45), (0.65, 0.55), (0.9, 0.5)]);
+            c.open(&[(0.3, 0.2), (0.3, 0.8)]);
+            c.open(&[(0.7, 0.3), (0.7, 0.7)]);
+            c.line((0.22, 0.2), (0.38, 0.2));
+            c.line((0.62, 0.3), (0.78, 0.3));
+        }
+        Icon::PaintBrush => {
+            c.poly(&[(0.72, 0.08), (0.92, 0.28), (0.6, 0.58), (0.42, 0.4)], false);
+            c.open(&[(0.42, 0.4), (0.2, 0.5), (0.1, 0.9), (0.5, 0.78), (0.6, 0.58)]);
+            c.line((0.2, 0.7), (0.4, 0.65));
+        }
         _ => return false,
     }
     true
@@ -386,6 +440,14 @@ mod tests {
             Camera,
             Pin,
             Mic,
+            PolyStar,
+            RectanglePrimitive,
+            OvalPrimitive,
+            AddAnchor,
+            DeleteAnchor,
+            ConvertAnchor,
+            Width,
+            PaintBrush,
             Eye,
             EyeOff,
             Lock,
