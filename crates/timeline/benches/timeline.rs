@@ -19,6 +19,7 @@
     clippy::too_many_lines,
     clippy::arithmetic_side_effects,
     clippy::indexing_slicing,
+    clippy::many_single_char_names,
     reason = "benchmark code over synthetic documents"
 )]
 

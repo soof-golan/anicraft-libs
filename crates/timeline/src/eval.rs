@@ -23,6 +23,9 @@ use crate::tween::{self, Placed};
 /// Most cached shape-tween plans before the cache is emptied.
 const MAX_PLANS: usize = 512;
 
+/// Most document shapes whose display nodes are kept; further shapes are converted on every use.
+const MAX_SHAPES: usize = 4096;
+
 /// Grey used for a bitmap whose pixels are not available.
 const MISSING_BITMAP: Rgba8 = Rgba8::new(128, 128, 128, 160);
 
@@ -98,6 +101,9 @@ pub struct Evaluator<'a> {
     text: TextEngine,
     options: EvalOptions,
     plans: HashMap<PlanKey, MorphPlan>,
+    /// Display nodes of the shapes stored in the document, by address (the document outlives the evaluator and is
+    /// not mutated while it is borrowed). Tweened shapes are temporaries and never enter.
+    shapes: HashMap<usize, Vec<Node>>,
 }
 
 impl std::fmt::Debug for Evaluator<'_> {
@@ -119,6 +125,7 @@ impl<'a> Evaluator<'a> {
             text: TextEngine::new(),
             options: EvalOptions::default(),
             plans: HashMap::new(),
+            shapes: HashMap::new(),
         }
     }
 
@@ -185,6 +192,7 @@ impl<'a> Evaluator<'a> {
         }
         let id = self.images.insert(image);
         self.image_ids.insert(name.to_owned(), Some(id));
+        self.shapes.clear();
         id
     }
 
@@ -193,6 +201,7 @@ impl<'a> Evaluator<'a> {
         self.images = ImageStore::new();
         self.image_ids.clear();
         self.plans.clear();
+        self.shapes.clear();
     }
 
     /// Number of frames of scene `scene`.
@@ -421,14 +430,20 @@ impl<'a> Evaluator<'a> {
 
     fn item_node(&mut self, item: Item<'a>, key: Option<u64>, since: u32, time: Time, state: &mut State<'a>, group_depth: usize) -> Option<Node> {
         match item {
-            Item::Morphed { shape, matrix } => self.shape_node(&shape, matrix, key),
+            Item::Morphed { shape, matrix } => {
+                let children = self.display_of(&shape);
+                shape_group(children, matrix, key)
+            }
             Item::Placed(placed) => self.placed_node(placed, key, since, time, state, group_depth),
         }
     }
 
     fn placed_node(&mut self, placed: Placed<'a>, key: Option<u64>, since: u32, time: Time, state: &mut State<'a>, group_depth: usize) -> Option<Node> {
         match placed.element {
-            Element::Shape(s) => self.shape_node(&s.shape, placed.matrix, key),
+            Element::Shape(s) => {
+                let children = self.stored_display(&s.shape);
+                shape_group(children, placed.matrix, key)
+            }
             Element::SymbolInstance(instance) => {
                 if !instance.visible {
                     return None;
@@ -469,7 +484,8 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn shape_node(&mut self, shape: &EdgeShape, matrix: Affine, key: Option<u64>) -> Option<Node> {
+    /// The nodes of a shape.
+    fn display_of(&mut self, shape: &EdgeShape) -> Vec<Node> {
         let mut resolved: HashMap<String, ImageId> = HashMap::new();
         for path in shape_bitmap_paths(shape) {
             if !resolved.contains_key(path)
@@ -478,8 +494,20 @@ impl<'a> Evaluator<'a> {
                 resolved.insert(path.to_owned(), id);
             }
         }
-        let children = shape.to_display(&|path: &str| resolved.get(path).copied());
-        (!children.is_empty()).then(|| Node::Group(Group { transform: matrix, children, key, ..Group::default() }))
+        shape.to_display(&|path: &str| resolved.get(path).copied())
+    }
+
+    /// The nodes of a shape stored in the document, converted once per evaluator.
+    fn stored_display(&mut self, shape: &'a EdgeShape) -> Vec<Node> {
+        let address = std::ptr::from_ref(shape).addr();
+        if let Some(nodes) = self.shapes.get(&address) {
+            return nodes.clone();
+        }
+        let nodes = self.display_of(shape);
+        if self.shapes.len() < MAX_SHAPES {
+            self.shapes.insert(address, nodes.clone());
+        }
+        nodes
     }
 
     fn bitmap_nodes(&mut self, name: &str) -> Vec<Node> {
@@ -550,6 +578,11 @@ impl<'a> Evaluator<'a> {
         state.stack.pop();
         nodes
     }
+}
+
+/// A shape's nodes under its matrix; nothing for a shape without paint.
+fn shape_group(children: Vec<Node>, transform: Affine, key: Option<u64>) -> Option<Node> {
+    (!children.is_empty()).then(|| Node::Group(Group { transform, children, key, ..Group::default() }))
 }
 
 /// A classic tween that follows a motion guide, evaluated at progress `t`.
