@@ -36,6 +36,25 @@ fn first_transform(ev: &mut Evaluator<'_>, frame: u32) -> Affine {
 }
 
 #[test]
+fn created_motion_tween_plays_back_its_keys() {
+    use anim_scene::motion::{self, MotionProp};
+    let mut d = tween_doc(Affine::translate((10.0, 20.0)), Affine::IDENTITY, |_| {});
+    // One keyframe spanning 11 frames, no end keyframe: a motion tween span.
+    d.scenes[0].layers[0].frames = vec![keyframe(0, 11, vec![instance("box", Affine::translate((10.0, 20.0)))])];
+    let id = anim_scene::TimelineId::Scene(0);
+    motion::create_motion_tween(&mut d, &id, 0, 0).unwrap();
+    motion::set_motion_key(&mut d, &id, 0, 0, MotionProp::X, 10, 110.0).unwrap();
+    motion::set_motion_key(&mut d, &id, 0, 0, MotionProp::Y, 5, 70.0).unwrap();
+    motion::set_motion_key(&mut d, &id, 0, 0, MotionProp::Alpha, 10, 0.0).unwrap();
+    let mut ev = Evaluator::new(&d);
+    assert!((first_transform(&mut ev, 0).translation().x - 10.0).abs() < 1e-9);
+    assert!((first_transform(&mut ev, 5).translation().x - 60.0).abs() < 1e-9);
+    assert!((first_transform(&mut ev, 5).translation().y - 70.0).abs() < 1e-9);
+    assert!((first_transform(&mut ev, 10).translation().x - 110.0).abs() < 1e-9);
+    assert!((first_transform(&mut ev, 10).translation().y - 70.0).abs() < 1e-9, "the last key holds");
+}
+
+#[test]
 fn linear_position_tween() {
     let d = tween_doc(Affine::translate((0.0, 20.0)), Affine::translate((100.0, 20.0)), |_| {});
     let mut ev = Evaluator::new(&d);

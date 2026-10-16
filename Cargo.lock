@@ -343,6 +343,7 @@ dependencies = [
  "anim-shape",
  "postcard",
  "proptest",
+ "roxmltree 0.21.1",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

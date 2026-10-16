@@ -410,6 +410,9 @@ impl<'a> Evaluator<'a> {
                     .map(|e| {
                         let mut placed = Placed::hold(e);
                         placed.matrix = delta.apply(placed.matrix);
+                        if (delta.alpha - 1.0).abs() > f64::EPSILON && e.as_symbol_instance().is_some() {
+                            placed.color.mul[3] *= anim_core::num::f64_to_f32(delta.alpha.clamp(0.0, 1.0));
+                        }
                         Item::Placed(placed)
                     })
                     .collect()
