@@ -2,6 +2,7 @@
 
 #![allow(dead_code, clippy::arithmetic_side_effects, clippy::indexing_slicing, clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use anim_artwork::{ArtworkTree, to_display};
@@ -54,7 +55,7 @@ pub fn save(component: &str, name: &str, width: u32, height: u32, rgba: &[u8], s
     write_png(&dir.join(format!("{name}@{scale}x.png")), w, h, &z);
 }
 
-pub fn px(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+pub const fn px(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     let at = ((y * width + x) * 4) as usize;
     [rgba[at], rgba[at + 1], rgba[at + 2], rgba[at + 3]]
 }
@@ -94,7 +95,7 @@ pub fn stream_body(dict: &str, data: &str) -> String {
 pub fn utf16_hex(text: &str) -> String {
     let mut hex = String::from("<FEFF");
     for unit in text.encode_utf16() {
-        hex.push_str(&format!("{unit:04X}"));
+        let _ = write!(hex, "{unit:04X}");
     }
     hex.push('>');
     hex

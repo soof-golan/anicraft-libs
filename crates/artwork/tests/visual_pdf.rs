@@ -18,6 +18,8 @@
 
 mod common;
 
+use std::fmt::Write as _;
+
 use anim_artwork::{ArtworkTree, Limits, import_ai};
 use common::{assemble_pdf, assert_px, golden, render_tree, save, stream_body, utf16_hex};
 
@@ -51,8 +53,12 @@ impl Spec<'_> {
             }
             out
         };
-        let all: String = (0..self.layers.len()).map(|i| format!("{} 0 R ", 5 + i)).collect();
-        let props: String = self.layers.iter().enumerate().map(|(i, (key, _))| format!("/{key} {} 0 R ", 5 + i)).collect();
+        let mut all = String::new();
+        let mut props = String::new();
+        for (i, (key, _)) in self.layers.iter().enumerate() {
+            let _ = write!(all, "{} 0 R ", 5 + i);
+            let _ = write!(props, "/{key} {} 0 R ", 5 + i);
+        }
         let mut objects = vec![
             format!("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [{all}] /D << {} >> >> >>", refs(self.config)),
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
@@ -274,7 +280,7 @@ fn hostile_layer_structures_do_not_panic() {
         spec.extra = vec!["[ 8 0 R {L1} ]".to_owned(), "[ 7 0 R {L2} ]".to_owned()];
         let bytes = spec.build();
         let result = import_ai(&bytes, &Limits::default());
-        println!("{what}: {:?}", result.as_ref().map(|t| t.outline()));
+        println!("{what}: {:?}", result.as_ref().map(anim_artwork::ArtworkTree::outline));
         if let Ok(tree) = result {
             let _ = render_tree(&tree);
         }
