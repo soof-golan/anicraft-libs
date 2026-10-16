@@ -65,7 +65,21 @@ pub fn write_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> io::Resul
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
-    let mut encoder = png::Encoder::new(BufWriter::new(File::create(path)?), width, height);
+    encode_png_to(BufWriter::new(File::create(path)?), width, height, rgba)
+}
+
+/// Encodes straight-alpha RGBA8 as PNG bytes.
+///
+/// # Errors
+/// PNG encoding failures (including a buffer that does not match the size).
+pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    encode_png_to(&mut out, width, height, rgba)?;
+    Ok(out)
+}
+
+fn encode_png_to<W: io::Write>(sink: W, width: u32, height: u32, rgba: &[u8]) -> io::Result<()> {
+    let mut encoder = png::Encoder::new(sink, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().map_err(io::Error::other)?;
@@ -222,6 +236,7 @@ mod tests {
         write_png(&path, 2, 2, &checker()).unwrap();
         let back = read_png(&path).unwrap();
         assert_eq!(back, Png { width: 2, height: 2, rgba: checker() });
+        assert_eq!(decode_png(&encode_png(2, 2, &checker()).unwrap()).unwrap(), back);
         assert_eq!(check_golden(&path, 2, 2, &checker(), 0), Ok(Golden::Matched));
         let mut near = checker();
         near[0] = 250;
