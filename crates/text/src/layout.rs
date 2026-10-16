@@ -265,11 +265,13 @@ impl TextLayout {
     }
 
     pub(crate) fn para_for_offset(&self, offset: usize) -> Option<&ParaLayout> {
-        self.paras.iter().rev().find(|p| p.start <= offset).or_else(|| self.paras.first())
+        self.para_index_for_offset(offset).and_then(|i| self.paras.get(i))
     }
 
+    /// The last paragraph that starts at or before `offset` (the first one before the text), by binary search: the
+    /// paragraphs are in text order.
     pub(crate) fn para_index_for_offset(&self, offset: usize) -> Option<usize> {
-        self.paras.iter().rposition(|p| p.start <= offset).or(if self.paras.is_empty() { None } else { Some(0) })
+        if self.paras.is_empty() { None } else { Some(self.paras.partition_point(|p| p.start <= offset).saturating_sub(1)) }
     }
 
     /// The caret at `offset` (clamped to the text, snapped to a character boundary), attached to the character after
@@ -320,7 +322,9 @@ impl TextLayout {
     #[must_use]
     pub fn selection_rects(&self, range: Range<usize>) -> Vec<Rect> {
         let mut out = Vec::new();
-        for (index, para) in self.paras.iter().enumerate() {
+        // Only paragraphs that end at or after the range starts and start before it ends contribute.
+        let first = self.paras.partition_point(|p| p.start.saturating_add(p.len) < range.start);
+        for (index, para) in self.paras.iter().enumerate().skip(first).take_while(|(_, p)| p.start < range.end) {
             let end = para.start.saturating_add(para.len);
             let (lo, hi) = (range.start.max(para.start), range.end.min(end));
             if lo < hi {

@@ -210,6 +210,38 @@ fn query_benches(c: &mut Criterion) {
             }
         });
     });
+    // Many short paragraphs (a long list): queries must not scan all of them.
+    let many = engine.layout(&RichText::new((0..4000).map(|i| Paragraph::from_text(format!("שלום {i} abc"))).collect()), Some(300.0));
+    let starts: Vec<usize> = many.paragraphs.iter().map(|p| p.range.start).collect();
+    if std::env::var_os("BENCH_CHECKSUM").is_some() {
+        let text: String = starts
+            .iter()
+            .map(|&o| {
+                format!(
+                    "{:?}{:?}{:?}",
+                    many.caret_rect(many.caret_at(o + 1), 1.0),
+                    many.word_range_at(o + 2),
+                    many.selection_rects(o.saturating_sub(3)..o + 5)
+                )
+            })
+            .collect();
+        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
+        eprintln!("checksum queries: {hash:016x}");
+    }
+    group.bench_function("many-paragraphs-caret_rect", |b| {
+        b.iter(|| {
+            for &o in &starts {
+                black_box(many.caret_rect(many.caret_at(o), 1.0));
+            }
+        });
+    });
+    group.bench_function("many-paragraphs-selection_rects", |b| {
+        b.iter(|| {
+            for window in starts.windows(4).step_by(10) {
+                black_box(many.selection_rects(window[0]..window[3]));
+            }
+        });
+    });
     group.finish();
 }
 
