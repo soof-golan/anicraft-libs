@@ -25,8 +25,8 @@ pub fn copy_lines(para: &ParaLayout, paragraph_index: usize, out: &mut TextLayou
             range: para.global(range.start)..para.global(range.end),
             rect: Rect::new(x0, para.origin.y + f64::from(m.block_min_coord) + shift, x1.max(x0), para.origin.y + f64::from(m.block_max_coord) + shift),
             baseline,
-            ascent: f64::from(m.ascent),
-            descent: f64::from(m.descent),
+            ascent: f64::from(m.baseline - m.content_block_min_coord),
+            descent: f64::from(m.content_block_max_coord - m.baseline),
             rtl: para.rtl,
         });
 
@@ -61,14 +61,14 @@ pub fn copy_lines(para: &ParaLayout, paragraph_index: usize, out: &mut TextLayou
             let advance = f64::from(gr.advance());
             extent = Some(extent.map_or((origin.x, origin.x + advance), |(lo, hi)| (lo.min(origin.x), hi.max(origin.x + advance))));
             let underline = gr.style().underline.as_ref().map(|u| {
-                let metrics = run.metrics();
+                let metrics = run.font_metrics();
                 let top = baseline - f64::from(u.offset.unwrap_or(metrics.underline_offset));
                 let thickness = f64::from(u.size.unwrap_or(metrics.underline_size)).max(0.5);
                 Rect::new(origin.x, top, origin.x + advance, top + thickness)
             });
             let synthesis = run.synthesis();
             out.runs.push(GlyphRun {
-                font: FontFace::new(run.font().clone(), run.normalized_coords().to_vec()),
+                font: FontFace::new(run.font().clone(), run.normalized_coords().iter().map(|c| c.to_bits()).collect()),
                 size: f64::from(run.font_size()),
                 color: gr.style().brush,
                 rtl: run.is_rtl(),

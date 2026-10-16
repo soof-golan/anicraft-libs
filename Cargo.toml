@@ -61,12 +61,12 @@ rayon = "1.11"
 rustc-hash = "2"
 crossbeam-channel = "0.5"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
-parley = "0.11"
+parley = "0.12"
 # fontique is parley's font database; the direct dependency only exists to turn on `fontconfig-dlopen`, so Linux builds
 # need no libfontconfig at link time (the library is opened at run time, and system fonts are skipped when it is absent).
-fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
+fontique = { version = "0.12", features = ["fontconfig-dlopen"] }
 # The Unicode property tables parley itself uses (anim-text asks them which characters would attach to a line break).
-parley_data = "0.11"
+parley_data = "0.12"
 icu_properties = { version = "2", default-features = false }
 skrifa = "0.44"
 image = { version = "0.25", default-features = false, features = ["png"] }
