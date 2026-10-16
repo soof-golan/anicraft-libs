@@ -6,6 +6,7 @@ use anim_morph::style::lerp_color;
 use anim_scene::{EaseTarget, Element, Frame, InstanceFilter, SymbolInstance};
 
 use crate::ease;
+use crate::guide::{Guide, follow};
 use crate::xform::{self, Progress, TweenParams};
 
 /// One element as it is drawn in a frame: the source element with the properties a tween may have changed.
@@ -42,6 +43,12 @@ pub fn mapped_filters(instance: &SymbolInstance) -> Vec<Filter> {
 /// symbol instances also their colour transform and filters.
 #[must_use]
 pub fn classic<'a>(start: &'a Frame, end: &'a Frame, t: f64) -> Vec<Placed<'a>> {
+    classic_along(start, end, t, None)
+}
+
+/// Like [`classic`], for a layer guided by a motion guide: positions follow `guide` (see [`crate::guide`]).
+#[must_use]
+pub fn classic_along<'a>(start: &'a Frame, end: &'a Frame, t: f64, guide: Option<&Guide>) -> Vec<Placed<'a>> {
     let params = TweenParams { rotate: start.motion_tween_rotate, times: start.motion_tween_rotate_times.unwrap_or(1.0), scale: start.motion_tween_scale };
     let progress = Progress {
         position: ease::for_target(start, EaseTarget::Position, t),
@@ -64,6 +71,9 @@ pub fn classic<'a>(start: &'a Frame, end: &'a Frame, t: f64) -> Vec<Placed<'a>> 
             let Some(to) = end.elements.get(j) else { return placed };
             if let (Some(a), Some(b)) = (from.matrix(), to.matrix()) {
                 placed.matrix = xform::interpolate(a, b, progress, &params);
+                if let Some(guide) = guide {
+                    placed.matrix = follow(placed.matrix, a, b, guide, progress.position, start.motion_tween_snap, start.motion_tween_orient_to_path);
+                }
             }
             if let (Element::SymbolInstance(a), Element::SymbolInstance(b)) = (from, to) {
                 placed.color = a.color.lerp(&b.color, color_f32(color_p));

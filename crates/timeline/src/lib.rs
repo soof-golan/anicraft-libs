@@ -17,6 +17,8 @@
 //!   the rotate setting (auto, none, clockwise or counter-clockwise with extra turns) and the scale flag, and
 //!   interpolate colour transforms and filters. Easing is Flash's classic ease or a named or custom bezier ease,
 //!   chosen per property (see [`ease`]).
+//!   A tween on a layer guided by a motion guide layer follows the guide's first stroke at constant speed, turning
+//!   the baseline with the path when "orient to path" is set (see [`guide`]).
 //! - **Shape tweens** use `anim-morph`, with the keyframe's shape hints. **Motion-object tweens** read what they can
 //!   of `motionObjectXML` (see [`motion`]) and otherwise hold the first keyframe.
 //! - **Symbols**: graphic instances are locked to the parent timeline (loop, play once, single frame from
@@ -30,6 +32,7 @@
 //! [`element_key`], so a click found by the renderer maps back to a layer and element.
 
 pub mod ease;
+pub mod guide;
 pub mod images;
 pub mod motion;
 pub mod tween;

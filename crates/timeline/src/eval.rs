@@ -14,6 +14,7 @@ use anim_shape::EdgeShape;
 use anim_text::TextEngine;
 
 use crate::ease;
+use crate::guide::Guide;
 use crate::images::{ImageProvider, NoDecoder};
 use crate::motion::MotionTracks;
 use crate::text::text_nodes;
@@ -318,7 +319,8 @@ impl<'a> Evaluator<'a> {
         let Some(keyframe) = layer.keyframe_at(time.frame) else { return Vec::new() };
         let since = time.frame.saturating_sub(keyframe.index);
         let top = state.stack.is_empty();
-        let items = self.layer_items(layer, keyframe, key, layer_index, time.frame);
+        let guided = guided_tween(timeline, layer, keyframe, time.frame);
+        let items = self.layer_items(layer, keyframe, key, layer_index, time.frame, guided);
         let mut out = Vec::new();
         for (i, item) in items.into_iter().enumerate() {
             let node_key = top.then(|| element_key(layer_index, i));
@@ -330,8 +332,19 @@ impl<'a> Evaluator<'a> {
     }
 
     /// The elements of `keyframe` as they are at `frame`, tweened when the keyframe starts a tween.
-    fn layer_items(&mut self, layer: &'a Layer, keyframe: &'a Frame, key: &str, layer_index: usize, frame: u32) -> Vec<Item<'a>> {
+    fn layer_items(
+        &mut self,
+        layer: &'a Layer,
+        keyframe: &'a Frame,
+        key: &str,
+        layer_index: usize,
+        frame: u32,
+        guided: Option<GuidedTween<'a>>,
+    ) -> Vec<Item<'a>> {
         let hold = || keyframe.elements.iter().map(|e| Item::Placed(Placed::hold(e))).collect::<Vec<_>>();
+        if let Some(g) = guided {
+            return tween::classic_along(g.start, g.end, g.t, Some(&g.guide)).into_iter().map(Item::Placed).collect();
+        }
         if frame <= keyframe.index {
             return hold();
         }
@@ -537,6 +550,32 @@ impl<'a> Evaluator<'a> {
         state.stack.pop();
         nodes
     }
+}
+
+/// A classic tween that follows a motion guide, evaluated at progress `t`.
+struct GuidedTween<'a> {
+    start: &'a Frame,
+    end: &'a Frame,
+    t: f64,
+    guide: Guide,
+}
+
+/// The guided classic tween that decides what the layer shows at `frame`, if its parent is a guide layer with a
+/// stroke. That is the tween starting at `keyframe`, or, on a plain keyframe that ends a guided tween with the same
+/// number of elements, the finished tween (so an oriented element does not pop at the last keyframe).
+fn guided_tween<'a>(timeline: &'a Timeline, layer: &'a Layer, keyframe: &'a Frame, frame: u32) -> Option<GuidedTween<'a>> {
+    let guide_layer = timeline.layers.get(layer.parent_layer_index?).filter(|p| p.kind == LayerKind::Guide)?;
+    let (start, end) = if matches!(keyframe.tween_type, TweenType::Classic) {
+        (keyframe, layer.next_keyframe_after(keyframe.index)?)
+    } else {
+        let prev = layer.frames.get(layer.keyframe_position_at(frame)?.checked_sub(1)?)?;
+        (frame == keyframe.index && matches!(prev.tween_type, TweenType::Classic) && prev.elements.len() == keyframe.elements.len())
+            .then_some((prev, keyframe))?
+    };
+    let span = end.index.checked_sub(start.index).filter(|s| *s > 0)?;
+    let t = f64::from(frame.saturating_sub(start.index)) / f64::from(span);
+    let guide = Guide::from_keyframe(guide_layer.keyframe_at(frame).or_else(|| guide_layer.frames.first())?)?;
+    Some(GuidedTween { start, end, t, guide })
 }
 
 fn onion_alpha(distance: u32, count: u32) -> f32 {
