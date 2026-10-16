@@ -43,6 +43,12 @@ pub const fn ceil_f64_to_i32(v: f64) -> i32 {
     v.ceil() as i32
 }
 
+/// Linear blend: `a` at `t = 0`, `b` at `t = 1` (not clamped).
+#[must_use]
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    (b - a).mul_add(t, a)
+}
+
 /// Maps a unit value (0.0 ..= 1.0, clamped) to 0 ..= 255 with rounding. `NaN` becomes 0.
 #[must_use]
 #[expect(
@@ -141,6 +147,14 @@ mod tests {
             let expected = if v.is_nan() { 0 } else { (v.clamp(0.0, 1.0) * 255.0).round() as u8 };
             assert_eq!(unit_f32_to_u8(v), expected, "{v:e}");
         }
+    }
+
+    #[test]
+    fn lerp_hits_endpoints_and_midpoint() {
+        assert!((lerp(2.0, 6.0, 0.0) - 2.0).abs() < f64::EPSILON);
+        assert!((lerp(2.0, 6.0, 1.0) - 6.0).abs() < f64::EPSILON);
+        assert!((lerp(2.0, 6.0, 0.5) - 4.0).abs() < f64::EPSILON);
+        assert!((lerp(2.0, 6.0, 1.5) - 8.0).abs() < f64::EPSILON);
     }
 
     #[test]

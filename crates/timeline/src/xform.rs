@@ -8,6 +8,7 @@
 use std::f64::consts::{PI, TAU};
 
 use anim_core::Affine;
+use anim_core::num::lerp;
 use anim_scene::TweenRotate;
 
 /// A matrix split into the components a tween interpolates.
@@ -46,12 +47,6 @@ pub fn decompose(m: Affine) -> Decomposed {
 pub fn compose(d: &Decomposed) -> Affine {
     let phi = d.rotation + d.skew;
     Affine::new([d.sx * d.rotation.cos(), d.sx * d.rotation.sin(), -d.sy * phi.sin(), d.sy * phi.cos(), d.tx, d.ty])
-}
-
-/// `a` at `t = 0`, `b` at `t = 1`.
-#[must_use]
-pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    (b - a).mul_add(t, a)
 }
 
 /// Wraps an angle to `(-pi, pi]`.

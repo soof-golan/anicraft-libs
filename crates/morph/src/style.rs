@@ -3,17 +3,13 @@
 //! Colours, gradient matrices, gradient stops and stroke widths blend smoothly. Things that cannot blend (a linear
 //! against a radial gradient, two different bitmaps, caps and joins) switch at the halfway point.
 
-use anim_core::num::round_f64_to_u32;
+use anim_core::num::{lerp, round_f64_to_u32};
 use anim_core::{Affine, Rgba8};
 use anim_display::GradientStop;
 use anim_shape::{BitmapFill, FillStyle, GradientFill, SolidStroke, StrokeStyle};
 
 /// Most stops an interpolated gradient keeps.
 const MAX_STOPS: usize = 32;
-
-fn lerp(a: f64, b: f64, t: f64) -> f64 {
-    (b - a).mul_add(t, a)
-}
 
 fn lerp_u8(a: u8, b: u8, t: f64) -> u8 {
     let v = lerp(f64::from(a), f64::from(b), t).clamp(0.0, 255.0);

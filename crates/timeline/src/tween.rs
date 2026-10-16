@@ -7,7 +7,8 @@ use anim_scene::{EaseTarget, Element, Frame, InstanceFilter, SymbolInstance};
 
 use crate::ease;
 use crate::guide::{Guide, follow};
-use crate::xform::{self, Progress, TweenParams, lerp};
+use crate::xform::{self, Progress, TweenParams};
+use anim_core::num::lerp;
 
 /// One element as it is drawn in a frame: the source element with the properties a tween may have changed.
 #[derive(Debug, Clone)]
