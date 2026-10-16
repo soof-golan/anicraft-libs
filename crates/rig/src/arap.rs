@@ -320,8 +320,7 @@ impl ArapSolver {
             xx.push(qi.x);
             xy.push(qi.y);
         }
-        self.cg(&bx, &mut xx);
-        self.cg(&by, &mut xy);
+        let (xx, xy) = self.cg(&bx, xx, &by, xy);
         let mut out = q.to_vec();
         for ((&id, &x), &y) in self.free.iter().zip(&xx).zip(&xy) {
             if x.is_finite()
@@ -353,44 +352,113 @@ impl ArapSolver {
         dot
     }
 
-    /// Preconditioned CG for the free block. `b` holds the right-hand side with fixed-neighbour terms already
-    /// moved over, `x` the starting guess on entry and the solution on exit (both indexed by position among the free
-    /// vertices).
-    fn cg(&self, b: &[f64], x: &mut [f64]) {
-        let precondition = |d: f64, v: f64| if d > 0.0 { v / d } else { v };
-        let mut au = vec![0.0; x.len()];
-        self.matvec(x, &mut au);
-        let mut r: Vec<f64> = b.iter().zip(&au).map(|(b, a)| b - a).collect();
-        let bnorm = b.iter().map(|v| v * v).sum::<f64>().sqrt();
-        let target = (1.0e-12 * bnorm).max(1.0e-14 * self.diameter);
-        let mut z: Vec<f64> = r.iter().zip(&self.free_diag).map(|(&v, &d)| precondition(d, v)).collect();
-        let mut p = z.clone();
-        let mut rz: f64 = r.iter().zip(&z).map(|(a, c)| a * c).sum();
-        let mut res2: f64 = r.iter().map(|v| v * v).sum();
+    /// Like [`Self::matvec`] for two vectors at once: the two sums are independent, so they overlap in the
+    /// processor instead of each waiting on its own chain. Returns `(ua . out_a, ub . out_b)`.
+    #[allow(clippy::indexing_slicing, reason = "rows, cols and weights are built together with the free list they index")]
+    fn matvec_pair(&self, (ua, ub): (&[f64], &[f64]), (out_a, out_b): (&mut [f64], &mut [f64])) -> (f64, f64) {
+        let (mut dot_a, mut dot_b) = (0.0, 0.0);
+        let mut start = 0;
+        for ((((oa, ob), (&a, &b)), &d), &end) in
+            out_a.iter_mut().zip(out_b.iter_mut()).zip(ua.iter().zip(ub)).zip(&self.free_diag).zip(self.rows.iter().skip(1))
+        {
+            let end = num::u32_to_usize(end);
+            let (mut sa, mut sb) = (d * a, d * b);
+            for (&c, &w) in self.cols[start..end].iter().zip(&self.weights[start..end]) {
+                let c = num::u32_to_usize(c);
+                sa -= w * ua[c];
+                sb -= w * ub[c];
+            }
+            start = end;
+            (*oa, *ob) = (sa, sb);
+            dot_a += a * sa;
+            dot_b += b * sb;
+        }
+        (dot_a, dot_b)
+    }
+
+    /// Preconditioned CG for the free block, for the x and the y coordinates at once (each with its own steps,
+    /// stopping when its own residual is small enough). `b` holds a right-hand side with fixed-neighbour terms
+    /// already moved over and `x` the starting guess; the solutions are returned. All are indexed by position among
+    /// the free vertices.
+    fn cg(&self, bx: &[f64], x: Vec<f64>, by: &[f64], y: Vec<f64>) -> (Vec<f64>, Vec<f64>) {
+        let mut cx = Cg::new(self, bx, x);
+        let mut cy = Cg::new(self, by, y);
         for _ in 0..self.options.max_cg_iterations {
-            let rn = res2.sqrt();
-            if rn <= target || !rn.is_finite() {
+            let (live_x, live_y) = (cx.wants_step(), cy.wants_step());
+            if !live_x && !live_y {
                 break;
             }
-            let pap = self.matvec(&p, &mut au);
-            if pap <= 0.0 || !pap.is_finite() {
-                break;
-            }
-            let alpha = rz / pap;
-            let (mut rz_new, mut res2_new) = (0.0, 0.0);
-            for ((((xi, ri), zi), (pi, api)), &d) in x.iter_mut().zip(r.iter_mut()).zip(z.iter_mut()).zip(p.iter().zip(&au)).zip(&self.free_diag) {
-                *xi += alpha * pi;
-                *ri -= alpha * api;
-                *zi = precondition(d, *ri);
-                rz_new += *ri * *zi;
-                res2_new += *ri * *ri;
-            }
-            res2 = res2_new;
-            let beta = if rz > 0.0 { rz_new / rz } else { 0.0 };
-            rz = rz_new;
-            for (pi, zi) in p.iter_mut().zip(&z) {
-                *pi = zi + beta * *pi;
-            }
+            let (pap_x, pap_y) = self.matvec_pair((&cx.p, &cy.p), (&mut cx.au, &mut cy.au));
+            cx.advance(&self.free_diag, pap_x);
+            cy.advance(&self.free_diag, pap_y);
+        }
+        (cx.x, cy.x)
+    }
+}
+
+/// The state of one preconditioned conjugate gradient solve.
+struct Cg {
+    x: Vec<f64>,
+    r: Vec<f64>,
+    z: Vec<f64>,
+    p: Vec<f64>,
+    /// The system matrix times `p`.
+    au: Vec<f64>,
+    /// `r . z`.
+    rz: f64,
+    /// `r . r`.
+    res2: f64,
+    /// The residual norm below which the solve is done.
+    target: f64,
+    live: bool,
+}
+
+fn precondition(d: f64, v: f64) -> f64 {
+    if d > 0.0 { v / d } else { v }
+}
+
+impl Cg {
+    fn new(solver: &ArapSolver, b: &[f64], x: Vec<f64>) -> Self {
+        let mut au = vec![0.0; x.len()];
+        solver.matvec(&x, &mut au);
+        let r: Vec<f64> = b.iter().zip(&au).map(|(b, a)| b - a).collect();
+        let bnorm = b.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let z: Vec<f64> = r.iter().zip(&solver.free_diag).map(|(&v, &d)| precondition(d, v)).collect();
+        let rz = r.iter().zip(&z).map(|(a, c)| a * c).sum();
+        let res2 = r.iter().map(|v| v * v).sum();
+        Self { x, p: z.clone(), r, z, au, rz, res2, target: (1.0e-12 * bnorm).max(1.0e-14 * solver.diameter), live: true }
+    }
+
+    /// Whether another step is needed (the residual is finite and above the target); once not, never again.
+    fn wants_step(&mut self) -> bool {
+        let norm = self.res2.sqrt();
+        self.live &= norm > self.target && norm.is_finite();
+        self.live
+    }
+
+    /// Moves along `p` given `p . A p`, then picks the next direction.
+    fn advance(&mut self, diag: &[f64], pap: f64) {
+        if !self.live {
+            return;
+        }
+        if pap <= 0.0 || !pap.is_finite() {
+            self.live = false;
+            return;
+        }
+        let alpha = self.rz / pap;
+        let (mut rz_new, mut res2_new) = (0.0, 0.0);
+        for ((((xi, ri), zi), (pi, api)), &d) in self.x.iter_mut().zip(&mut self.r).zip(&mut self.z).zip(self.p.iter().zip(&self.au)).zip(diag) {
+            *xi += alpha * pi;
+            *ri -= alpha * api;
+            *zi = precondition(d, *ri);
+            rz_new += *ri * *zi;
+            res2_new += *ri * *ri;
+        }
+        self.res2 = res2_new;
+        let beta = if self.rz > 0.0 { rz_new / self.rz } else { 0.0 };
+        self.rz = rz_new;
+        for (pi, zi) in self.p.iter_mut().zip(&self.z) {
+            *pi = zi + beta * *pi;
         }
     }
 }
