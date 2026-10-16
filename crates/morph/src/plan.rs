@@ -31,22 +31,20 @@ impl Part {
     }
 }
 
-fn fill_parts(shape: &EdgeShape) -> Vec<Part> {
-    shape
-        .assemble()
+/// The fill contours and the stroke polylines of a shape.
+fn parts(shape: &EdgeShape) -> (Vec<Part>, Vec<Part>) {
+    let assembled = shape.assemble();
+    let fills = assembled
         .fills
         .iter()
         .flat_map(|region| region.contours().into_iter().filter_map(|p| Contour::from_path(&p)).map(|c| Part::new(region.style, c)))
-        .collect()
-}
-
-fn stroke_parts(shape: &EdgeShape) -> Vec<Part> {
-    shape
-        .assemble()
+        .collect();
+    let strokes = assembled
         .strokes
         .iter()
         .flat_map(|run| run.polylines().into_iter().filter_map(|p| Contour::from_path(&p)).map(|c| Part::new(run.style, c)))
-        .collect()
+        .collect();
+    (fills, strokes)
 }
 
 fn nearest_part(parts: &[Part], p: Point) -> Option<(usize, f64)> {
@@ -227,8 +225,7 @@ impl MorphPlan {
     /// Matches the contours of `start` and `end` and aligns each matched pair.
     #[must_use]
     pub fn new(start: &EdgeShape, end: &EdgeShape, options: &MorphOptions) -> Self {
-        let (fa, fb) = (fill_parts(start), fill_parts(end));
-        let (sa, sb) = (stroke_parts(start), stroke_parts(end));
+        let ((fa, sa), (fb, sb)) = (parts(start), parts(end));
         let (fill_forced, fill_anchors) = resolve_hints(&options.hints, &fa, &fb);
         let (stroke_forced, stroke_anchors) = resolve_hints(&options.hints, &sa, &sb);
         let fill_penalty = |x: &Part, y: &Part| -> f64 {

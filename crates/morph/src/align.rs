@@ -3,11 +3,12 @@
 //! Without hints the start point and direction that minimise the total vertex distance win. A hint pins an arc
 //! position of `a` to one of `b`: the contours are split there and each piece pair is resampled on its own.
 
+use anim_core::Point;
 use anim_core::kurbo::{CubicBez, ParamCurve};
 use anim_core::num::{round_f64_to_u32, u32_to_usize, usize_to_f64};
 
 use crate::MorphMode;
-use crate::contour::{Contour, resample_chain, split_to};
+use crate::contour::{Contour, chain_lens, resample_chain, split_to};
 
 /// Fewest cubics a distributive resample produces.
 pub const MIN_SEGMENTS: usize = 16;
@@ -25,16 +26,30 @@ pub struct Anchor {
 /// Two chains of equal length, cubic `i` of one corresponding to cubic `i` of the other.
 pub type Pair = (Vec<CubicBez>, Vec<CubicBez>);
 
-fn cost(a: &[CubicBez], b: &[CubicBez]) -> f64 {
-    a.iter().zip(b).map(|(x, y)| x.p0.distance_squared(y.p0) + x.eval(0.5).distance_squared(y.eval(0.5))).sum()
+/// The points of each cubic the correspondence cost compares: its start and its middle.
+fn key_points(chain: &[CubicBez]) -> Vec<[Point; 2]> {
+    chain.iter().map(|c| [c.p0, c.eval(0.5)]).collect()
 }
 
-fn piece_pair(a: Vec<CubicBez>, b: Vec<CubicBez>, k: usize, mode: MorphMode) -> Pair {
+/// Squared distance between the key points of `a` and those of `b` read from `shift` on, wrapping around.
+fn shifted_cost(a: &[[Point; 2]], b: &[[Point; 2]], shift: usize) -> f64 {
+    let (head, tail) = b.split_at(shift.min(b.len()));
+    a.iter().zip(tail.iter().chain(head)).map(|(x, y)| x[0].distance_squared(y[0]) + x[1].distance_squared(y[1])).sum()
+}
+
+fn cost(a: &[CubicBez], b: &[CubicBez]) -> f64 {
+    shifted_cost(&key_points(a), &key_points(b), 0)
+}
+
+/// A connected chain with the arc length of each cubic.
+type Measured<'a> = (&'a [CubicBez], &'a [f64]);
+
+fn piece_pair(a: Measured, b: Measured, k: usize, mode: MorphMode) -> Pair {
     match mode {
-        MorphMode::Distributive => (resample_chain(&a, k), resample_chain(&b, k)),
+        MorphMode::Distributive => (resample_chain(a.0, a.1, k), resample_chain(b.0, b.1, k)),
         MorphMode::Angular => {
-            let n = a.len().max(b.len()).clamp(1, MAX_SEGMENTS);
-            (split_to(a, n), split_to(b, n))
+            let n = a.0.len().max(b.0.len()).clamp(1, MAX_SEGMENTS);
+            (split_to(a.0, a.1, n), split_to(b.0, b.1, n))
         }
     }
 }
@@ -107,7 +122,8 @@ fn build_pieces(a: &Contour, b: &Contour, anchors: &[Anchor], closed: bool, mode
             continue;
         }
         let share = f64::midpoint(if la > EPS { span_a / la } else { 0.0 }, if lb > EPS { span_b / lb } else { 0.0 });
-        let (pa, pb) = piece_pair(a.arc(cur.a, span_a), b.arc(cur.b, span_b), share_count(n, share), mode);
+        let (arc_a, arc_b) = (a.arc(cur.a, span_a), b.arc(cur.b, span_b));
+        let (pa, pb) = piece_pair((&arc_a, &chain_lens(&arc_a)), (&arc_b, &chain_lens(&arc_b)), share_count(n, share), mode);
         out.0.extend(pa);
         out.1.extend(pb);
     }
@@ -117,13 +133,12 @@ fn build_pieces(a: &Contour, b: &Contour, anchors: &[Anchor], closed: bool, mode
 /// Whole-contour pair with the best cyclic shift of `b`.
 fn build_free(a: &Contour, b: &Contour, closed: bool, mode: MorphMode) -> Pair {
     let n = segments_for(a.segs.len().max(b.segs.len()));
-    let (pa, mut pb) = piece_pair(a.segs.clone(), b.segs.clone(), n, mode);
+    let (pa, mut pb) = piece_pair((&a.segs, a.lens()), (&b.segs, b.lens()), n, mode);
     if closed {
+        let (ka, kb) = (key_points(&pa), key_points(&pb));
         let mut best = (f64::INFINITY, 0usize);
         for shift in 0..pb.len() {
-            let mut rotated = pb.clone();
-            rotated.rotate_left(shift);
-            let c = cost(&pa, &rotated);
+            let c = shifted_cost(&ka, &kb, shift);
             if c < best.0 {
                 best = (c, shift);
             }

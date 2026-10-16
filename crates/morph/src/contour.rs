@@ -20,6 +20,8 @@ const CLOSE_TOL: f64 = 0.05;
 pub struct Contour {
     pub segs: Vec<CubicBez>,
     pub closed: bool,
+    /// Arc length of each cubic, measured once.
+    lens: Vec<f64>,
 }
 
 /// A straight cubic from `a` to `b`.
@@ -64,22 +66,76 @@ pub fn chain_lens(segs: &[CubicBez]) -> Vec<f64> {
     segs.iter().map(|c| c.arclen(ACC)).collect()
 }
 
+/// Cuts pieces out of a connected chain. Pieces asked for in increasing order cost only the cubics they cover, and
+/// the parameter of a cut shared by two neighbouring pieces is solved once.
+struct Cutter<'a> {
+    segs: &'a [CubicBez],
+    lens: &'a [f64],
+    /// Arc position at which each cubic starts.
+    starts: Vec<f64>,
+    /// First cubic that can still overlap a piece.
+    first: usize,
+    /// The last solved cut: cubic, arc position within it and parameter.
+    last_cut: Option<(usize, f64, f64)>,
+}
+
+impl<'a> Cutter<'a> {
+    fn new(segs: &'a [CubicBez], lens: &'a [f64]) -> Self {
+        let starts = lens
+            .iter()
+            .scan(0.0, |at, &len| {
+                let start = *at;
+                *at += len;
+                Some(start)
+            })
+            .collect();
+        Self { segs, lens, starts, first: 0, last_cut: None }
+    }
+
+    /// The part of the chain between the arc positions `s0 <= s1` (clamped to the chain). May be empty. Successive
+    /// calls must not move `s0` backwards.
+    fn cut(&mut self, s0: f64, s1: f64) -> Vec<CubicBez> {
+        let Self { segs, lens, starts, first, last_cut } = self;
+        while starts.get(*first).zip(lens.get(*first)).is_some_and(|(a, len)| a + len <= s0) {
+            *first = first.saturating_add(1);
+        }
+        let mut cut_t = |index: usize, seg: &CubicBez, len: f64, l: f64| {
+            if l <= 0.0 {
+                return 0.0;
+            }
+            if l >= len {
+                return 1.0;
+            }
+            if let Some((i, at, t)) = *last_cut
+                && i == index
+                && at.to_bits() == l.to_bits()
+            {
+                return t;
+            }
+            let t = t_at(seg, len, l);
+            *last_cut = Some((index, l, t));
+            t
+        };
+        let mut out = Vec::new();
+        for (i, ((seg, &len), &a)) in segs.iter().zip(*lens).zip(starts.iter()).enumerate().skip(*first) {
+            if a >= s1 {
+                break;
+            }
+            let lo = s0.max(a);
+            let hi = s1.min(a + len);
+            if hi - lo > EPS {
+                let (t0, t1) = (cut_t(i, seg, len, lo - a), cut_t(i, seg, len, hi - a));
+                out.push(seg.subsegment(t0..t1));
+            }
+        }
+        out
+    }
+}
+
 /// The part of a connected chain between the arc positions `s0 <= s1` (clamped to the chain). May be empty.
 #[must_use]
 pub fn extract_chain(segs: &[CubicBez], lens: &[f64], s0: f64, s1: f64) -> Vec<CubicBez> {
-    let mut out = Vec::new();
-    let mut start = 0.0;
-    for (seg, &len) in segs.iter().zip(lens) {
-        let a = start;
-        let b = start + len;
-        start = b;
-        let lo = s0.max(a);
-        let hi = s1.min(b);
-        if hi - lo > EPS {
-            out.push(seg.subsegment(t_at(seg, len, lo - a)..t_at(seg, len, hi - a)));
-        }
-    }
-    out
+    Cutter::new(segs, lens).cut(s0, s1)
 }
 
 fn unit_or(v: Vec2, fallback: Vec2) -> Vec2 {
@@ -110,9 +166,9 @@ pub fn merge_chain(sub: &[CubicBez]) -> Option<CubicBez> {
 
 /// Resamples a connected chain into `k` cubics of equal arc length. Ends are snapped so the result is connected.
 #[must_use]
-pub fn resample_chain(chain: &[CubicBez], k: usize) -> Vec<CubicBez> {
-    let lens = chain_lens(chain);
+pub fn resample_chain(chain: &[CubicBez], lens: &[f64], k: usize) -> Vec<CubicBez> {
     let total: f64 = lens.iter().sum();
+    let mut cutter = Cutter::new(chain, lens);
     let start = chain.first().map_or(Point::ZERO, |c| c.p0);
     let end = chain.last().map_or(start, |c| c.p3);
     let kf = usize_to_f64(k.max(1));
@@ -121,7 +177,7 @@ pub fn resample_chain(chain: &[CubicBez], k: usize) -> Vec<CubicBez> {
     for j in 0..k {
         let s0 = total * usize_to_f64(j) / kf;
         let s1 = total * usize_to_f64(j.saturating_add(1)) / kf;
-        let mut piece = merge_chain(&extract_chain(chain, &lens, s0, s1)).unwrap_or_else(|| point(pen));
+        let mut piece = merge_chain(&cutter.cut(s0, s1)).unwrap_or_else(|| point(pen));
         piece.p0 = pen;
         if j.saturating_add(1) == k {
             piece.p3 = end;
@@ -134,8 +190,8 @@ pub fn resample_chain(chain: &[CubicBez], k: usize) -> Vec<CubicBez> {
 
 /// Splits the longest cubics in half until the chain has `n` cubics (corners are kept as vertices).
 #[must_use]
-pub fn split_to(chain: Vec<CubicBez>, n: usize) -> Vec<CubicBez> {
-    let mut items: Vec<(CubicBez, f64)> = chain.into_iter().map(|c| (c, c.arclen(ACC))).collect();
+pub fn split_to(chain: &[CubicBez], lens: &[f64], n: usize) -> Vec<CubicBez> {
+    let mut items: Vec<(CubicBez, f64)> = chain.iter().copied().zip(lens.iter().copied()).collect();
     while items.len() < n {
         let Some((idx, &(seg, len))) = items.iter().enumerate().max_by(|x, y| x.1.1.total_cmp(&y.1.1)) else { break };
         let t = if len > EPS { t_at(&seg, len, len / 2.0) } else { 0.5 };
@@ -202,23 +258,29 @@ impl Contour {
             last.p3 = begin;
             closed = true;
         }
-        Some(Self { segs, closed })
+        Some(Self::new(segs, closed))
     }
 
+    fn new(segs: Vec<CubicBez>, closed: bool) -> Self {
+        let lens = chain_lens(&segs);
+        Self { segs, closed, lens }
+    }
+
+    /// Arc length of each cubic.
     #[must_use]
-    pub fn lens(&self) -> Vec<f64> {
-        chain_lens(&self.segs)
+    pub fn lens(&self) -> &[f64] {
+        &self.lens
     }
 
     #[must_use]
     pub fn length(&self) -> f64 {
-        self.lens().iter().sum()
+        self.lens.iter().sum()
     }
 
     /// The same contour traversed the other way.
     #[must_use]
     pub fn reversed(&self) -> Self {
-        Self { segs: self.segs.iter().rev().map(|c| rev_cubic(*c)).collect(), closed: self.closed }
+        Self::new(self.segs.iter().rev().map(|c| rev_cubic(*c)).collect(), self.closed)
     }
 
     /// Signed area (positive clockwise on a y-down screen); 0 for open contours.
@@ -232,8 +294,7 @@ impl Contour {
     pub fn centroid(&self) -> Point {
         let mut sum = Vec2::ZERO;
         let mut weight = 0.0;
-        for seg in &self.segs {
-            let w = seg.arclen(ACC);
+        for (seg, &w) in self.segs.iter().zip(&self.lens) {
             let mid = (seg.eval(0.25).to_vec2() + seg.eval(0.75).to_vec2()) * 0.5;
             sum += mid * w;
             weight += w;
@@ -251,14 +312,14 @@ impl Contour {
     pub fn nearest(&self, p: Point) -> (f64, f64) {
         let mut best = (0.0, f64::INFINITY);
         let mut before = 0.0;
-        for seg in &self.segs {
+        for (seg, &len) in self.segs.iter().zip(&self.lens) {
             let near = seg.nearest(p, ACC);
             let d = near.distance_sq.sqrt();
             if d < best.1 {
                 let s = if near.t <= 0.0 { 0.0 } else { seg.subsegment(0.0..near.t).arclen(ACC) };
                 best = (before + s, d);
             }
-            before += seg.arclen(ACC);
+            before += len;
         }
         best
     }
@@ -267,19 +328,18 @@ impl Contour {
     /// wrap around; open ones are clamped. Never empty: a zero span gives a point.
     #[must_use]
     pub fn arc(&self, s0: f64, span: f64) -> Vec<CubicBez> {
-        let lens = self.lens();
-        let total: f64 = lens.iter().sum();
+        let total = self.length();
         let s0 = if self.closed && total > EPS { s0.rem_euclid(total) } else { s0.clamp(0.0, total) };
         let span = span.max(0.0);
         let out = if self.closed && s0 + span > total {
             let doubled: Vec<CubicBez> = self.segs.iter().chain(self.segs.iter()).copied().collect();
-            let dlens: Vec<f64> = lens.iter().chain(lens.iter()).copied().collect();
+            let dlens: Vec<f64> = self.lens.iter().chain(self.lens.iter()).copied().collect();
             extract_chain(&doubled, &dlens, s0, s0 + span)
         } else {
-            extract_chain(&self.segs, &lens, s0, s0 + span)
+            extract_chain(&self.segs, &self.lens, s0, s0 + span)
         };
         if out.is_empty() {
-            let at = extract_chain(&self.segs, &lens, s0, total).first().map_or_else(|| self.segs.first().map_or(Point::ZERO, |c| c.p0), |c| c.p0);
+            let at = extract_chain(&self.segs, &self.lens, s0, total).first().map_or_else(|| self.segs.first().map_or(Point::ZERO, |c| c.p0), |c| c.p0);
             vec![point(at)]
         } else {
             out
