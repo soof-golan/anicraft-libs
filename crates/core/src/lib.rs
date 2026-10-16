@@ -10,8 +10,10 @@ pub mod blend;
 pub mod color;
 pub mod color_transform;
 pub mod num;
+pub mod projective;
 
 pub use blend::BlendMode;
+pub use projective::{Homography, Matrix3D, Perspective, Transform3D};
 pub use color::{PremulRgba, Rgba8};
 pub use color_transform::ColorTransform;
 pub use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick, TimeRange};
