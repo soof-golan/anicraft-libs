@@ -137,6 +137,10 @@ Before landing, also check that the crate compiles for the other platforms:
 - Never change machine-wide or user-wide configuration: ~/.cargo/config.toml, ~/.gitconfig, shell profiles,
   rustup defaults or system packages. One global linker setting broke every build on the box. Local build settings
   belong in /mnt/data/anim/.cargo/config.toml (mold is already set there); CI settings belong in the workflow files.
+- GitHub Actions are pinned by full commit SHA with the release tag in a comment
+  (`uses: actions/checkout@<40-hex sha> # v7.0.1`). Never use a bare tag or branch. When adding or bumping an action,
+  resolve the latest release's commit with `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (dereference annotated
+  tags).
 - Never use `git stash`. The stash list is shared by every worktree of a repository, so parallel agents swap each
   other's changes. Commit work in progress on your branch instead, and squash or amend before landing.
 - Binary assets (fonts, PNG goldens) may be produced by tools, written into your worktree. Record their source and
