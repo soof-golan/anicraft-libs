@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use anim_core::{Affine, BlendMode, Point, Rect, Rgba8, Size};
+use anim_core::{Affine, BlendMode, Point, Rect, Rgba8, Size, Vec2};
 use anim_display::{Bitmap, Cap, DisplayList, Fill, FillRule, Gradient, Group, ImageId, ImageStore, Join, Mesh, Node, Paint, Spread, Stroke, StrokeScale};
 use anim_render::{MAX_DEPTH, straight_rgba};
 use base64::Engine as _;
@@ -64,6 +64,38 @@ pub(super) fn triangle_affine(s: [Point; 3], d: [Point; 3]) -> Option<Affine> {
     }
     let m = basis(d) * from.inverse();
     m.is_finite().then_some(m)
+}
+
+/// The triangle `t` with each edge moved outwards by its entry in `grow` (edge k runs from vertex k to vertex k + 1). A vertex whose
+/// two edges would meet far away (a needle-sharp corner) stays where it was.
+fn grown(t: [Point; 3], grow: [f64; 3]) -> [Point; 3] {
+    type Line = Option<(Vec2, f64)>;
+    let [a, b, c] = t;
+    let centroid = Point::new((a.x + b.x + c.x) / 3.0, (a.y + b.y + c.y) / 3.0);
+    // The edge as `normal . p = offset`, the normal pointing away from the centroid.
+    let line = |p: Point, q: Point, by: f64| -> Line {
+        let along = q - p;
+        let len = along.hypot();
+        if len < 1e-12 {
+            return None;
+        }
+        let normal = Vec2::new(along.y, -along.x) / len;
+        let normal = if normal.dot(p.midpoint(q) - centroid) < 0.0 { -normal } else { normal };
+        Some((normal, normal.dot(p.to_vec2()) + by))
+    };
+    let reach = grow.iter().fold(0.0_f64, |m, g| m.max(*g)) * 8.0;
+    let meet = |first: Line, second: Line, stay: Point| {
+        let (Some((n1, k1)), Some((n2, k2))) = (first, second) else { return stay };
+        let det = n1.cross(n2);
+        if det.abs() < 1e-9 {
+            return stay;
+        }
+        let at = Point::new(k2.mul_add(-n1.y, k1 * n2.y) / det, n2.x.mul_add(-k1, n1.x * k2) / det);
+        if at.distance(stay) > reach { stay } else { at }
+    };
+    let [ga, gb, gc] = grow;
+    let (ab, bc, ca) = (line(a, b, ga), line(b, c, gb), line(c, a, gc));
+    [meet(ca, ab, a), meet(ab, bc, b), meet(bc, ca, c)]
 }
 
 impl<'a> Emitter<'a> {
@@ -382,6 +414,17 @@ impl<'a> Emitter<'a> {
         }
         let content_id = self.next_id("c");
         let _ = writeln!(self.defs, "<g id=\"{content_id}\">\n{content}</g>");
+        // Neighbouring clipped copies would each cover only part of a pixel on their shared edge and let the backdrop show
+        // through as a faint line, so edges shared by two triangles are grown by one device pixel into the neighbour.
+        let mut uses: BTreeMap<(u32, u32), u32> = BTreeMap::new();
+        for &[i0, i1, i2] in m.triangles.iter().take(MAX_TRIANGLES) {
+            for (a, b) in [(i0, i1), (i1, i2), (i2, i0)] {
+                let count = uses.entry((a.min(b), a.max(b))).or_insert(0);
+                *count = count.saturating_add(1);
+            }
+        }
+        let device = local.determinant().abs().sqrt();
+        let seam = if device.is_finite() && device > 1e-9 { 1.0 / device } else { 0.0 };
         let mut tris = String::new();
         for tri in m.triangles.iter().take(MAX_TRIANGLES) {
             self.check(tris.len())?;
@@ -390,6 +433,8 @@ impl<'a> Emitter<'a> {
             let (Some(s0), Some(s1), Some(s2)) = (get(&m.source, i0), get(&m.source, i1), get(&m.source, i2)) else { continue };
             let (Some(d0), Some(d1), Some(d2)) = (get(&m.target, i0), get(&m.target, i1), get(&m.target, i2)) else { continue };
             let Some(map) = triangle_affine([s0, s1, s2], [d0, d1, d2]) else { continue };
+            let grow = |a: u32, b: u32| if uses.get(&(a.min(b), a.max(b))).is_some_and(|n| *n > 1) { seam } else { 0.0 };
+            let [d0, d1, d2] = grown([d0, d1, d2], [grow(i0, i1), grow(i1, i2), grow(i2, i0)]);
             let p = self.p();
             let outline = format!(" M{} {} L{} {} L{} {} Z", num(d0.x, p), num(d0.y, p), num(d1.x, p), num(d1.y, p), num(d2.x, p), num(d2.y, p));
             let clip = self.define("t", "clipPath", &format!("><path d=\"{}\"/>", outline.trim()));
