@@ -20,6 +20,11 @@ anim-text = { workspace = true }
 png = { workspace = true }
 roxmltree = { workspace = true }
 
+[[bench]]
+name = "timeline"
+harness = false
+
 [dev-dependencies]
 anim-render = { workspace = true }
+criterion = { version = "0.8", default-features = false }
 proptest = { workspace = true }

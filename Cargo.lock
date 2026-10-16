@@ -296,6 +296,7 @@ dependencies = [
  "anim-core",
  "anim-display",
  "anim-shape",
+ "criterion",
  "proptest",
  "serde",
 ]
@@ -404,6 +405,7 @@ dependencies = [
  "anim-scene",
  "anim-shape",
  "anim-text",
+ "criterion",
  "png",
  "proptest",
  "roxmltree 0.21.1",

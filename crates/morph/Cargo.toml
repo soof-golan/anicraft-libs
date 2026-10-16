@@ -16,5 +16,10 @@ anim-display = { workspace = true }
 anim-shape = { workspace = true }
 serde = { workspace = true }
 
+[[bench]]
+name = "morph"
+harness = false
+
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false }
 proptest = { workspace = true }
