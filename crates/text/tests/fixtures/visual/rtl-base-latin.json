@@ -1,0 +1,5 @@
+{"paragraphs":[
+{"direction":"Rtl","alignment":"Start","runs":[{"text":"Hello World!","family":"DejaVu Sans","size":32}]},
+{"direction":"Rtl","alignment":"Start","runs":[{"text":"1) First - item (2)","family":"DejaVu Sans","size":32}]},
+{"direction":"Ltr","alignment":"Start","runs":[{"text":"שלום!","family":"DejaVu Sans","size":32}]}
+]}

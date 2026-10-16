@@ -1,0 +1,8 @@
+{"paragraphs":[
+{"alignment":"Right","direction":"Ltr","runs":[{"text":"abc   ","family":"DejaVu Sans","size":30}]},
+{"direction":"Ltr","runs":[{"text":"","family":"DejaVu Sans","size":60}]},
+{"direction":"Rtl","runs":[{"text":"","family":"DejaVu Sans","size":30}]},
+{"direction":"Ltr","runs":[{"text":"   ","family":"DejaVu Sans","size":30}]},
+{"direction":"Ltr","runs":[{"text":"x\n\ny","family":"DejaVu Sans","size":30}]},
+{"direction":"Ltr","runs":[{"text":"end","family":"DejaVu Sans","size":30}]}
+]}
