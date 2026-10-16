@@ -47,6 +47,13 @@ own rules. CI enforces most of them.
 
 - Unit tests next to the code, integration tests in `tests/`. Round-trip tests for every format (`read(write(x)) == x`)
   and golden tests for rendering (small PNGs, compared with a tolerance).
+- One integration-test binary per crate: every `tests/*.rs` file is its own binary and its own link, which dominated CI
+  and local test time. Put a crate's integration tests in `tests/<crate>/main.rs` (cargo finds it as the test target
+  `<crate>`) with one module per theme (`tests/<crate>/visual.rs`, ...), shared helpers in `tests/<crate>/common/` and
+  `use crate::common;` in the modules. Fixtures and goldens stay in `tests/fixtures` and `tests/golden`. Do not add a
+  new top-level `tests/foo.rs`; add a module to `main.rs`. A crate with a single test file may keep it as `tests/<name>.rs`.
+- CI runs `mbx nextest run` (one process per test, all binaries at once) plus `mbx test --doc`; locally
+  `mbx nextest run -p <crate>` gives the same result.
 - Run builds through the queue (see below) in the dev profile. Use release only for benchmarks.
 
 ## Visual verification: predict, render, inspect
