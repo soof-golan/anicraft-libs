@@ -16,4 +16,8 @@ Liberation Sans 36 px (has no emoji, no Hebrew? it has Hebrew), text `Hi 😀 ש
    baseline is shared by `a`, `😀`, `b` (all on one line, same baseline).
 6. P6. Caret x of offset before `b` minus caret x before `😀` equals the 😀 advance (+-0.5).
 
-Verdicts: (filled in after inspection)
+Verdicts (emoji-fallback.png): P1, P2, P4, P5, P6 confirmed (emoji come from a different font face, no .notdef, the
+thumbs-up with skin tone, the flag and the family are one caret step each, the 60 px emoji sets the line height and
+the baseline is shared). P3 is replaced by the glyph-level checks: with the installed emoji font the emoji draw as
+monochrome outline glyphs (a colour font is not rasterised by the outline renderer, which is a known limitation of
+`to_display`, not of the layout).

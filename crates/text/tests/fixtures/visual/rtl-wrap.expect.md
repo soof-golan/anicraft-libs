@@ -20,4 +20,7 @@ auto direction (RTL), start alignment, wrapped at width 330 px (about 4-6 lines)
    is at x = right edge 330 (+-0.6) (start of an RTL line), the upstream caret on line k is at the visual left end of
    line k's text (including the hanging space: left of the last ink, x <= line ink x0).
 
-Verdicts: (filled in after inspection)
+Verdicts (rtl-wrap.png): P1 to P7 confirmed. Six flush-right lines, `054-1234567`, `3.14`, `2024` and `(Daniel` never
+split, the full stop that would start a line stays with the previous word, `(Daniel Cohen)` keeps its brackets in the
+right places, the same offset at a soft wrap has an upstream caret on the line above (left end) and a downstream
+caret on the next line (right edge).

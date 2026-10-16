@@ -17,4 +17,10 @@ DejaVu Sans 32 px, width 600. P0: `Hello World!` forced RTL. P1: `1) First - ite
    Hebrew run. Caret at offset 0 downstream (before ש, the first logical letter) is at the Hebrew run's right edge; the
    caret at the end (offset 9) downstream is at the line's right edge.
 
-Verdicts: (filled in after inspection)
+Verdicts (rtl-base-latin.png): P1, P2, P4 confirmed (`!Hello World` with the `!` on the left and carets as predicted;
+`שלום!` forced LTR draws the `!` at the right end).
+- P3 prediction was wrong, corrected here: I wrote that the final logical `)` is the leftmost glyph and mirrored.
+  UAX #9 W7 turns the digit in `(2)` into L (it follows the Latin letters), so `First - item (2)` is one LTR run and
+  its brackets are NOT mirrored; the `)` after the leading `1` is the one that takes the RTL base direction, is
+  mirrored to `(` and is drawn directly left of the `1`. The picture reads `First - item (2) (1` from left to right,
+  which is what the rules give; the engine matches that.

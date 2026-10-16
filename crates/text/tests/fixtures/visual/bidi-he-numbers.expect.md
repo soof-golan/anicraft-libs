@@ -22,4 +22,9 @@ Prediction (UAX #9, base level 1 because the first strong character is Hebrew):
 9. P9. Wrapped at width 900 is not needed (fits); at the same text with width 400 every line's right-most glyph run
    ends at x = 400 (start-aligned RTL, trailing space hangs on the left) -- see rtl-wrap.
 
-Verdicts: (filled in after inspection)
+Verdicts (rendered, inspected in bidi-he-numbers.png and asserted in tests/visual.rs):
+- P1 to P8 confirmed: one RTL line, each number one LTR run with increasing glyph x, `ב-2024` reads `2024-ב`
+  (the hyphen sits in the RTL run), numbers in reverse logical order, caret at the number start is the number's left edge
+  (downstream) or right edge (upstream), caret at the end is the line's left edge, number advance equals natural width.
+- P9 (wrapping at 400) is covered by rtl-wrap. No defect found in the layout itself.
+- Found while checking P8 on the multi-paragraph unwrapped case (see rtl-number-alignment): fixed.

@@ -24,4 +24,6 @@ P1 (RTL base): logical `שלום abc עולם`; visual (left to right): `םלו�
    the first word (ל ו ם = the left 3 letters of the first Hebrew run... precisely the characters after ש), the whole
    ` abc `, and the characters of the second word up to ע (the right 1 letter of the second word).
 
-Verdicts: (filled in after inspection)
+Verdicts (selection-mixed.png and selection-mixed-overlay.png, which draws the P1 and P8 selections): P1 to P8
+confirmed. The mixed-direction selection splits into the left two letters of the word and the space plus `de`; the
+RTL line's selection is one contiguous band from the left edge of the ayin to the left edge of the first shin.

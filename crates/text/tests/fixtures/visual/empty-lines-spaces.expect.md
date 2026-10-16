@@ -21,4 +21,10 @@ P3: three spaces, 30 px. P4: `x\n\ny` (forced breaks, 30 px, three lines, middle
 8. P8. Selection over the whole text has a rect on non-empty lines, and paragraph-break marker rects (narrow, 0.25
    of the line height) for the breaks of empty paragraphs.
 
-Verdicts: (filled in after inspection)
+Verdicts (empty-lines-spaces.png):
+- P1, P2, P3, P5, P6, P7, P8 confirmed (8 lines; the empty 60 px line is twice as tall; carets at 0 and 400; Down
+  visits each line once; empty paragraph breaks give a 0.25-line-height mark).
+- P4 prediction was wrong, corrected here before the assertion was written: trailing spaces that FIT inside the box
+  count for alignment (as in every text editor: you must see the caret after the space you typed). The line's last
+  advance edge is at x = 400 and the `c` ends 3 space widths before it, caret at offset 6 is at 400. They hang outside
+  the box only when they would overflow (see rtl-wrap and rtl-justify, where the wrapped-off space sits at x < 0).

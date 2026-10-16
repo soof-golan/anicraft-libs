@@ -22,4 +22,12 @@ Nine Arabic paragraphs, DejaVu Sans 40 px, each its own paragraph (auto -> RTL).
   initial form; assert it equals the initial form id `a`.
   The second word `ببب` has glyph ids [c, b, a] in x order.
 
-Verdicts: (filled in after inspection)
+Verdicts (arabic-joining.png and the x4 crop of the lam-alef rows):
+- P1 to P9 confirmed: `بببب` is final-medial-medial-initial; a lone beh is the isolated form (different id); lam-alef is
+  one ligature glyph with carets at 0, the middle and the end, evenly spaced; ZWNJ breaks the ligature and the joins
+  (two isolated forms for beh ZWNJ beh); ZWJ keeps beh-beh joined like the plain pair; letter spacing is not applied
+  to Arabic (same ids and advances as P1); Arabic-Indic digits are one LTR run left of the word; beh keeps its
+  initial form before a ligated lam-alef.
+- Prediction detail corrected: a caret press never stops between a letter and its ZWJ (cluster `ب` + ZWJ is one step);
+  the test follows the caret only up to the end of the paragraph (the first version of the test walked into the next
+  paragraphs and was wrong, not the layout).

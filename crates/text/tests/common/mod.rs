@@ -9,6 +9,8 @@
 //! `None` (and the test returns early, passing) when no installed font fits.
 #![allow(dead_code, reason = "each test file uses a different subset")]
 
+pub mod render;
+
 use std::ops::Range;
 
 use anim_core::Rect;

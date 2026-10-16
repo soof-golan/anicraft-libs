@@ -17,4 +17,5 @@ Four paragraphs, DejaVu Sans 28 px, unwrapped.
    (logical `))` at the end shows as `((` on the left).
    - P4: ids in x order = [id("("), id("("), id(א), id(")"), id(")")].
 
-Verdicts: (filled in after inspection)
+Verdicts (bidi-parens-mirror.png): P1 to P4 confirmed. Pictures read `(שלום) [עולם] {אבג}`, `שלום (hello) עולם`,
+`(abc)` unmirrored and `((א))`; glyph ids match the predictions (mirroring by glyph substitution, only in RTL runs).

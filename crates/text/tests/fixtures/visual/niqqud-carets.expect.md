@@ -19,4 +19,11 @@ P1: `é ạ̈ x` (LTR) with e+U+0301, a+U+0308+U+0323: clusters é, space, ạ̈
    vav's holam is above the vav (y above the baseline minus the x-height), the shin-dot above the shin's top-right,
    the qamats under the shin. (Inspect the zoomed crop.)
 
-Verdicts: (filled in after inspection)
+Verdicts (niqqud-carets.png, crops niqqud-carets-shin-x8.png and niqqud-carets-latin-x4.png):
+- P1 to P5 confirmed: nine caret steps in P0, five in P1, offsets only at cluster boundaries (shin + qamats + shin dot
+  is one step), hit tests never land inside a cluster, the marks add no width, one selection rectangle for the word.
+- P6 confirmed in the crops: shin dot above the right arm of the shin, qamats a bar under it, holam above the vav,
+  acute above the e, diaeresis above and dot below the a.
+- Fixture fix (the fixture, not the engine): the first version of the JSON had the Latin text written precomposed
+  (U+00E9 and U+1EA1 U+0308), so the cluster count was 6, not 8 characters. The fixture now spells the decomposed
+  sequences with JSON escapes (`é ạ̈ x`).
