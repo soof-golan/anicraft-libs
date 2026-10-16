@@ -70,7 +70,11 @@ fn dump(layout: &TextLayout) -> String {
     let mut out = String::new();
     let text = layout.text();
     for (i, l) in layout.lines.iter().enumerate() {
-        let _ = writeln!(out, "line {i}: range {:?} rect x {:.2}..{:.2} y {:.2}..{:.2} baseline {:.2} rtl {}", l.range, l.rect.x0, l.rect.x1, l.rect.y0, l.rect.y1, l.baseline, l.rtl);
+        let _ = writeln!(
+            out,
+            "line {i}: range {:?} rect x {:.2}..{:.2} y {:.2}..{:.2} baseline {:.2} rtl {}",
+            l.range, l.rect.x0, l.rect.x1, l.rect.y0, l.rect.y1, l.baseline, l.rtl
+        );
     }
     let mut runs: Vec<_> = layout.runs.iter().collect();
     runs.sort_by(|a, b| a.line.cmp(&b.line).then(a.origin.x.total_cmp(&b.origin.x)));
@@ -148,7 +152,12 @@ fn caret_y(layout: &TextLayout, offset: usize, affinity: Affinity) -> f64 {
 
 /// (x, id, advance) of every glyph of the runs inside `range`, left to right on screen.
 fn glyphs_in(layout: &TextLayout, range: &Range<usize>) -> Vec<(f64, u32, f64)> {
-    let mut out: Vec<_> = layout.runs.iter().filter(|r| r.range.start >= range.start && r.range.end <= range.end).flat_map(|r| r.glyphs.iter().map(|g| (g.x, g.id, g.advance))).collect();
+    let mut out: Vec<_> = layout
+        .runs
+        .iter()
+        .filter(|r| r.range.start >= range.start && r.range.end <= range.end)
+        .flat_map(|r| r.glyphs.iter().map(|g| (g.x, g.id, g.advance)))
+        .collect();
     out.sort_by(|a, b| a.0.total_cmp(&b.0));
     out
 }
@@ -304,7 +313,8 @@ fn arabic_letters_join_and_ligate() {
     assert_eq!(ids[2].len(), 1);
     let lig = ids[2][0];
     let start = r[2].start;
-    let (x0, xm, x1) = (caret_x(&layout, start, Affinity::Downstream), caret_x(&layout, start + 2, Affinity::Downstream), caret_x(&layout, start + 4, Affinity::Downstream));
+    let (x0, xm, x1) =
+        (caret_x(&layout, start, Affinity::Downstream), caret_x(&layout, start + 2, Affinity::Downstream), caret_x(&layout, start + 4, Affinity::Downstream));
     assert!(close(xm, f64::midpoint(x0, x1), 1.5) && x0 > xm && xm > x1, "{x0} {xm} {x1}");
     // P4: a ZWNJ in between prevents the ligature.
     assert!(ids[3].len() >= 2 && !ids[3].contains(&lig), "{:?}", ids[3]);
