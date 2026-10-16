@@ -149,7 +149,15 @@ pub fn align(a: &Contour, b: &Contour, anchors: &[Anchor], mode: MorphMode) -> (
     let anchors = clean(anchors, la, lb, closed);
     let bflip = b.reversed();
     let mut best: Option<(f64, Pair)> = None;
+    // Hints pin points, not the direction: keep the winding of the keyframes (reversing a square pinned at one corner
+    // would collapse the in-betweens) and reverse only when the contours wind oppositely or the hints demand it.
+    let preferred = (closed && !anchors.is_empty())
+        .then(|| a.area() * b.area() < 0.0)
+        .filter(|&flip| monotone(&if flip { flip_anchors(&anchors, lb) } else { anchors.clone() }, closed));
     for flip in [false, true] {
+        if preferred.is_some_and(|p| p != flip) {
+            continue;
+        }
         let candidate = if flip { &bflip } else { b };
         let anchors_here = if flip { flip_anchors(&anchors, lb) } else { anchors.clone() };
         if !monotone(&anchors_here, closed) {

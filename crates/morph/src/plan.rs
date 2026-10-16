@@ -193,6 +193,27 @@ fn lerp_chain(a: &[CubicBez], b: &[CubicBez], t: f64) -> Vec<CubicBez> {
     a.iter().zip(b).map(|(x, y)| CubicBez::new(x.p0.lerp(y.p0, t), x.p1.lerp(y.p1, t), x.p2.lerp(y.p2, t), x.p3.lerp(y.p3, t))).collect()
 }
 
+type StylePair = (Option<u32>, Option<u32>);
+
+/// Gathers the in-between contours into one path per style pair, so holes stay holes of their region. A contour that
+/// exists at only one end joins the group of a matched pair with the same style on that side (a hole that grows in a
+/// square tweening to a ring is part of the ring); only when there is none does it form its own group.
+fn group_items(items: &[Item], t: f64) -> BTreeMap<StylePair, BezPath> {
+    let mut groups: BTreeMap<StylePair, BezPath> = BTreeMap::new();
+    let (matched, lone): (Vec<&Item>, Vec<&Item>) = items.iter().partition(|i| i.a_style.is_some() && i.b_style.is_some());
+    for item in matched {
+        groups.entry((item.a_style, item.b_style)).or_default().extend(to_bez_path(&lerp_chain(&item.a, &item.b, t), item.closed).elements().iter().copied());
+    }
+    for item in lone {
+        let host = groups.keys().find(|(a, b)| (item.a_style.is_some() && *a == item.a_style) || (item.b_style.is_some() && *b == item.b_style)).copied();
+        groups
+            .entry(host.unwrap_or((item.a_style, item.b_style)))
+            .or_default()
+            .extend(to_bez_path(&lerp_chain(&item.a, &item.b, t), item.closed).elements().iter().copied());
+    }
+    groups
+}
+
 /// A prepared tween between two shapes: contours matched, aligned and resampled once; [`MorphPlan::at`] is cheap.
 #[derive(Debug, Clone)]
 pub struct MorphPlan {
@@ -244,20 +265,8 @@ impl MorphPlan {
         if t >= 1.0 {
             return self.end.clone();
         }
-        let mut fill_groups: BTreeMap<(Option<u32>, Option<u32>), BezPath> = BTreeMap::new();
-        for item in &self.fills {
-            fill_groups
-                .entry((item.a_style, item.b_style))
-                .or_default()
-                .extend(to_bez_path(&lerp_chain(&item.a, &item.b, t), item.closed).elements().iter().copied());
-        }
-        let mut stroke_groups: BTreeMap<(Option<u32>, Option<u32>), BezPath> = BTreeMap::new();
-        for item in &self.strokes {
-            stroke_groups
-                .entry((item.a_style, item.b_style))
-                .or_default()
-                .extend(to_bez_path(&lerp_chain(&item.a, &item.b, t), item.closed).elements().iter().copied());
-        }
+        let fill_groups = group_items(&self.fills, t);
+        let stroke_groups = group_items(&self.strokes, t);
         let mut inputs: Vec<PathInput> = Vec::new();
         for ((a, b), path) in fill_groups {
             let style = match (a.and_then(|i| self.start.fill(i)), b.and_then(|i| self.end.fill(i))) {
