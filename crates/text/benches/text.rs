@@ -57,7 +57,15 @@ fn document(count: usize, alignment: Alignment) -> RichText {
 
 fn checksum(layout: &TextLayout) -> u64 {
     let mut h = layout.lines.len() as u64;
+    for line in &layout.lines {
+        h = h.wrapping_mul(0x0100_0000_01b3)
+            ^ line.rect.x0.to_bits()
+            ^ line.rect.x1.to_bits().rotate_left(5)
+            ^ (line.range.start as u64)
+            ^ (line.range.end as u64).rotate_left(9);
+    }
     for run in &layout.runs {
+        h = h.wrapping_mul(0x0100_0000_01b3) ^ (run.range.start as u64) ^ (run.range.end as u64).rotate_left(9) ^ run.advance.to_bits();
         for g in &run.glyphs {
             h = h.wrapping_mul(0x0100_0000_01b3) ^ u64::from(g.id) ^ g.x.to_bits() ^ g.y.to_bits().rotate_left(17);
         }
