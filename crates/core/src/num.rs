@@ -116,7 +116,13 @@ mod tests {
     }
 
     #[test]
-    #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss, reason = "compares against the library rounding")]
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "compares against the library rounding"
+    )]
     fn unit_to_byte_matches_library_rounding_on_every_nearby_float() {
         // Every float within a few ulps of each half-way point and each whole byte, plus a sweep of the range.
         let mut values: Vec<f32> = (0..=255_u16).map(|b| f32::from(b) / 255.0).collect();
@@ -127,7 +133,10 @@ mod tests {
             values.push(f32::from_bits(0x3f80_0000_u32.saturating_sub(step.saturating_mul(2))));
             values.push(step as f32 / 2_000_000.0);
         }
-        let around: Vec<f32> = values.iter().flat_map(|v| (0..8_u32).flat_map(move |k| [f32::from_bits(v.to_bits().wrapping_add(k)), f32::from_bits(v.to_bits().wrapping_sub(k))])).collect();
+        let around: Vec<f32> = values
+            .iter()
+            .flat_map(|v| (0..8_u32).flat_map(move |k| [f32::from_bits(v.to_bits().wrapping_add(k)), f32::from_bits(v.to_bits().wrapping_sub(k))]))
+            .collect();
         for v in values.into_iter().chain(around) {
             let expected = if v.is_nan() { 0 } else { (v.clamp(0.0, 1.0) * 255.0).round() as u8 };
             assert_eq!(unit_f32_to_u8(v), expected, "{v:e}");

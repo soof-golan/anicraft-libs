@@ -22,7 +22,8 @@ use std::hint::black_box;
 use anim_core::kurbo::{Circle, Shape};
 use anim_core::{Affine, BezPath, BlendMode, ColorTransform, Point, Rgba8, Size};
 use anim_display::{
-    Bitmap, DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Mesh, Node, Paint, Spread, Stroke, StrokeStyle,
+    Bitmap, DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Mesh, Node, Paint, Spread, Stroke,
+    StrokeStyle,
 };
 use anim_render::{RenderOptions, Renderer};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -160,7 +161,11 @@ fn bitmaps() -> Scene {
     let id = scene.images.insert(Image::new(size, size, bytes).unwrap());
     for (i, smoothing) in [true, false, true, false].into_iter().enumerate() {
         let transform = Affine::rotate(0.3 + i as f64) * Affine::scale(if i < 2 { 1.7 } else { 0.31 });
-        scene.list.nodes.push(fill(rect(0.0, 270.0 * i as f64, 1920.0, 270.0 * (i + 1) as f64), Paint::Bitmap { image: id, transform, repeat: true, smoothing }, FillRule::NonZero));
+        scene.list.nodes.push(fill(
+            rect(0.0, 270.0 * i as f64, 1920.0, 270.0 * (i + 1) as f64),
+            Paint::Bitmap { image: id, transform, repeat: true, smoothing },
+            FillRule::NonZero,
+        ));
     }
     for k in 0..40_u32 {
         let transform = Affine::translate((f64::from(k % 8) * 230.0, f64::from(k / 8) * 210.0)) * Affine::rotate(f64::from(k) * 0.1) * Affine::scale(0.5);
@@ -198,7 +203,10 @@ fn layers() -> Scene {
         let x = f64::from(u32::try_from(i % 5).unwrap()) * 250.0;
         let y = f64::from(u32::try_from(i / 5).unwrap()) * 170.0;
         let inner = Group {
-            children: vec![fill(rect(x, y, x + 300.0, y + 200.0), Paint::Solid(RED), FillRule::NonZero), fill(circle(x + 150.0, y + 100.0, 90.0), Paint::Solid(BLUE), FillRule::NonZero)],
+            children: vec![
+                fill(rect(x, y, x + 300.0, y + 200.0), Paint::Solid(RED), FillRule::NonZero),
+                fill(circle(x + 150.0, y + 100.0, 90.0), Paint::Solid(BLUE), FillRule::NonZero),
+            ],
             color: ColorTransform { mul: [1.0, 0.9, 0.8, 0.8], add: [0.0, 0.0, 0.1, 0.0] },
             mask: Some(vec![fill(circle(x + 140.0, y + 100.0, 120.0), Paint::Solid(Rgba8::BLACK), FillRule::NonZero)]),
             ..Group::default()
@@ -212,10 +220,24 @@ fn layers() -> Scene {
 /// A blurred, shadowed full-frame group.
 fn filters() -> Scene {
     let mut scene = Scene::new(1280, 720);
-    let mut g = group((0..30_u32).map(|i| fill(circle(noise(i) * 1280.0, noise(i + 50) * 720.0, 40.0 + noise(i + 90) * 60.0), Paint::Solid(RED), FillRule::NonZero)).collect());
+    let mut g = group(
+        (0..30_u32)
+            .map(|i| fill(circle(noise(i) * 1280.0, noise(i + 50) * 720.0, 40.0 + noise(i + 90) * 60.0), Paint::Solid(RED), FillRule::NonZero))
+            .collect(),
+    );
     g.filters = vec![
         Filter::Blur { x: 24.0, y: 24.0, quality: 2 },
-        Filter::DropShadow { color: Rgba8::BLACK, angle_deg: 45.0, distance: 12.0, blur_x: 10.0, blur_y: 10.0, strength: 1.0, inner: false, knockout: false, hide_object: false },
+        Filter::DropShadow {
+            color: Rgba8::BLACK,
+            angle_deg: 45.0,
+            distance: 12.0,
+            blur_x: 10.0,
+            blur_y: 10.0,
+            strength: 1.0,
+            inner: false,
+            knockout: false,
+            hide_object: false,
+        },
     ];
     scene.list.nodes.push(Node::Group(g));
     scene
@@ -240,7 +262,10 @@ fn mesh() -> Scene {
             triangles.push([a + 1, a + cells + 2, a + cells + 1]);
         }
     }
-    let content = vec![fill(rect(0.0, 0.0, 800.0, 800.0), Paint::Solid(RED), FillRule::NonZero), fill(circle(400.0, 400.0, 300.0), Paint::Solid(BLUE), FillRule::NonZero)];
+    let content = vec![
+        fill(rect(0.0, 0.0, 800.0, 800.0), Paint::Solid(RED), FillRule::NonZero),
+        fill(circle(400.0, 400.0, 300.0), Paint::Solid(BLUE), FillRule::NonZero),
+    ];
     scene.list.nodes.push(Node::Mesh(Mesh { transform: Affine::IDENTITY, content, source, target, triangles }));
     scene
 }
