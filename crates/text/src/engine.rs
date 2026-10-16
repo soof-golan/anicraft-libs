@@ -15,7 +15,7 @@ use anim_core::{Rect, Rgba8, Vec2};
 use anim_display::Node;
 use fontique::Language;
 use parley::layout::{Alignment as ParleyAlignment, AlignmentOptions, IndentOptions};
-use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, GenericFamily, StyleProperty};
+use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, GenericFamily, OverflowWrap, StyleProperty};
 use parley::{Layout, LayoutContext};
 
 use crate::extract::copy_lines;
@@ -202,8 +202,14 @@ impl TextEngine {
         }
         if max_width.is_none() && shaped.len() > 1 {
             for s in &mut shaped {
-                let width = available(s, container).mul_add(1.0001, 0.01);
+                // Align in exactly the box the text is reported in, so no ink falls outside `bounds`. Breaking at the
+                // exact width could wrap the widest line on rounding, so that case gets a little slack.
+                let lines = s.layout.lines().count();
+                let width = available(s, container);
                 break_lines(s, Some(f64_to_f32(width)));
+                if s.layout.lines().count() != lines {
+                    break_lines(s, Some(f64_to_f32(width.mul_add(1.0001, 0.01))));
+                }
             }
         }
         for s in &mut shaped {
@@ -446,6 +452,8 @@ fn style_properties(run: &Run, font: &RunFont, language: Option<Language>) -> Ve
         StyleProperty::Brush(run.color),
         StyleProperty::Underline(run.underline),
         StyleProperty::Locale(language),
+        // A word wider than the box is broken between characters (never inside a cluster), as text fields do.
+        StyleProperty::OverflowWrap(OverflowWrap::BreakWord),
     ]
 }
 
