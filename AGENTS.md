@@ -65,7 +65,12 @@ this loop before its work counts as done:
    output must look like: specific pixel colours at named coordinates, which regions are filled and which are holes,
    where edges fall (to the pixel), text order and caret positions, what stays connected. Derive it from the format's
    rules, not from the current output.
-3. **Render and inspect closely.** Render to PNG under `/mnt/data/anim/scratch/visual/<crate>/`. Open every image with
+3. **Render and inspect closely.** Render to PNG under `/mnt/data/anim/scratch/visual/<crate>/`.
+   - Tests must still pass in CI on all three OSes, so write files only when `ANICRAFT_VISUAL_OUT` is set (q sets it
+     to that scratch directory). Never hard-code a machine path, and keep the pixel assertions running either way.
+   - Text tests must not depend on system fonts. Bundle a small OFL test font, or skip shaping assertions when the
+     font is missing.
+   - Open every image with
    the Read tool and compare it to the prediction region by region, zooming in with crops of the detailed areas
    (edges, joins, neck/attach points, glyph clusters). Write the verdict for each point in the `.expect.md`.
 4. **Fix the code.** When the render disagrees with a correct prediction, fix the code. Do not edit the prediction to
