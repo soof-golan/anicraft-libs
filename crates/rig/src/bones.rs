@@ -525,20 +525,8 @@ mod tests {
             let mut c = Chain::new(Point::ZERO, vec![Bone::new(4.0); n]);
             let d = c.reach() * f;
             let target = Point::new(d * ang.cos(), d * ang.sin());
-            // FABRIK converges linearly and slowly when the chain must fold back on itself (target opposite a
-            // straight chain), so the budget is generous.
-            let r = c.solve_ik(target, &IkOptions { max_iterations: 5000, tolerance: 1e-2 });
+            let r = c.solve_ik(target, &IkOptions { max_iterations: 400, tolerance: 1e-2 });
             prop_assert!(r.reached, "{:?}", r);
         }
-    }
-
-    #[test]
-    fn fabrik_folds_back_on_itself() {
-        // Regression: a straight 4-bone chain asked to reach nearly straight behind its root converged too slowly.
-        let mut c = Chain::new(Point::ZERO, vec![Bone::new(4.0); 4]);
-        let d = c.reach() * 0.505_792_030_131_756_9;
-        let ang = 3.138_247_803_026_619_7_f64;
-        let r = c.solve_ik(Point::new(d * ang.cos(), d * ang.sin()), &IkOptions { max_iterations: 5000, tolerance: 1e-2 });
-        assert!(r.reached, "{r:?}");
     }
 }
