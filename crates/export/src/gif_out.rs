@@ -4,8 +4,9 @@ use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use anim_core::num::{i64_to_f64, round_f64_to_i64};
+use anim_core::num::{i64_to_f64, round_f64_to_i64, u32_to_usize};
 use anim_render::straight_rgba;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ExportError, Result};
@@ -90,7 +91,12 @@ fn write_gif<W: Write>(source: &dyn FrameSource, writer: W, options: &GifOptions
         GifLoop::Repeat(n) if n > 0 => encoder.set_repeat(gif::Repeat::Finite(n))?,
         GifLoop::Once | GifLoop::Repeat(_) => {}
     }
+    // Quantising a frame (NeuQuant) dominates the export and frames are independent, so rendered frames wait in a batch
+    // that is quantised on all cores and then written in order. The batch is capped by memory as well as by core count.
+    let frame_bytes = u32_to_usize(width).saturating_mul(u32_to_usize(height)).saturating_mul(4).max(1);
+    let batch_len = rayon::current_num_threads().min(BATCH_BYTES.checked_div(frame_bytes).unwrap_or(1)).max(1);
     let mut delay_iter = delays.into_iter();
+    let mut batch: Vec<(Vec<u8>, bool, u16)> = Vec::with_capacity(batch_len);
     for_each_frame(source, &options.raster, progress, |_, _, image| {
         let mut pixels = straight_rgba(image);
         let mut any_transparent = false;
@@ -103,14 +109,35 @@ fn write_gif<W: Write>(source: &dyn FrameSource, writer: W, options: &GifOptions
                 *alpha = 255;
             }
         }
-        let mut frame = gif::Frame::from_rgba_speed(w16, h16, &mut pixels, speed);
-        frame.delay = delay_iter.next().unwrap_or_else(|| options.min_delay_cs.max(1));
-        frame.dispose = if any_transparent { gif::DisposalMethod::Background } else { gif::DisposalMethod::Keep };
-        encoder.write_frame(&frame)?;
+        batch.push((pixels, any_transparent, delay_iter.next().unwrap_or_else(|| options.min_delay_cs.max(1))));
+        if batch.len() >= batch_len {
+            write_batch(&mut encoder, &mut batch, (w16, h16), speed)?;
+        }
         Ok(())
     })?;
+    write_batch(&mut encoder, &mut batch, (w16, h16), speed)?;
     let writer = encoder.into_inner()?;
     Ok((writer, ExportReport { frames: total, files: Vec::new(), bytes: 0 }))
+}
+
+/// Pixel bytes that may wait for quantising at once.
+const BATCH_BYTES: usize = 256 * 1024 * 1024;
+
+/// Quantises the batched frames in parallel and writes them in order. Empties `batch`.
+fn write_batch<W: Write>(encoder: &mut gif::Encoder<W>, batch: &mut Vec<(Vec<u8>, bool, u16)>, (w, h): (u16, u16), speed: i32) -> Result<()> {
+    let frames: Vec<gif::Frame<'static>> = std::mem::take(batch)
+        .into_par_iter()
+        .map(|(mut pixels, any_transparent, delay)| {
+            let mut frame = gif::Frame::from_rgba_speed(w, h, &mut pixels, speed);
+            frame.delay = delay;
+            frame.dispose = if any_transparent { gif::DisposalMethod::Background } else { gif::DisposalMethod::Keep };
+            frame
+        })
+        .collect();
+    for frame in &frames {
+        encoder.write_frame(frame)?;
+    }
+    Ok(())
 }
 
 /// Writes an animated GIF to the file `path`. A cancelled or failed export removes the partial file.
