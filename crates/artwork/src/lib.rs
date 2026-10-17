@@ -23,6 +23,7 @@ mod display;
 mod psd;
 mod raster;
 mod svg;
+pub mod synthetic;
 mod tree;
 mod vmask;
 
