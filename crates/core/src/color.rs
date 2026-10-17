@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::num::unit_f32_to_u8;
+use crate::num::{lerp, round_f64_to_u32, unit_f32_to_u8};
 
 /// An 8-bit sRGB colour with straight (non-premultiplied) alpha.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -43,6 +43,14 @@ impl Rgba8 {
     #[must_use]
     pub fn alpha_f32(self) -> f32 {
         f32::from(self.a) / 255.0
+    }
+
+    /// Channel-wise blend of two straight-alpha colours: `self` at `t = 0`, `other` at `t = 1`. Each channel is rounded and
+    /// clamped to 0 ..= 255, so overshooting `t` saturates.
+    #[must_use]
+    pub fn lerp(self, other: Self, t: f64) -> Self {
+        let channel = |a: u8, b: u8| u8::try_from(round_f64_to_u32(lerp(f64::from(a), f64::from(b), t).clamp(0.0, 255.0))).unwrap_or(u8::MAX);
+        Self { r: channel(self.r, other.r), g: channel(self.g, other.g), b: channel(self.b, other.b), a: channel(self.a, other.a) }
     }
 
     /// Parses `#RGB`, `#RRGGBB` or `#RRGGBBAA` (the leading `#` is optional; case-insensitive).
@@ -119,6 +127,16 @@ mod tests {
         assert!(Rgba8::from_hex("#12345").is_err());
         assert!(Rgba8::from_hex("#GG0000").is_err());
         assert!(Rgba8::from_hex("").is_err());
+    }
+
+    #[test]
+    fn lerp_blends_channels_and_saturates() {
+        let (a, b) = (Rgba8::new(0, 100, 255, 0), Rgba8::new(200, 50, 0, 255));
+        assert_eq!(a.lerp(b, 0.0), a);
+        assert_eq!(a.lerp(b, 1.0), b);
+        assert_eq!(a.lerp(b, 0.5), Rgba8::new(100, 75, 128, 128));
+        assert_eq!(a.lerp(b, 7.0).r, 255, "overshoot saturates instead of wrapping");
+        assert_eq!(a.lerp(b, -7.0).r, 0);
     }
 
     #[test]

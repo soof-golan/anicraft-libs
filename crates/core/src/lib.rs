@@ -4,11 +4,13 @@
 //! - Geometry is `kurbo`, re-exported so every crate uses the same version: stage space is y-down pixels.
 //! - Colour is [`Rgba8`] (straight alpha, what files store) and [`PremulRgba`] (premultiplied `f32`, what renderers
 //!   compute with), [`ColorTransform`] (Flash-style multiply/offset) and [`BlendMode`].
-//! - [`num`] holds the only `as` conversions in the code base, saturating and documented.
+//! - [`num`] holds the only `as` conversions in the code base, saturating and documented, and the pixel rounding rule.
+//! - [`hash::Fnv1a`] is the stable 64-bit content hash for ids and fingerprints.
 
 pub mod blend;
 pub mod color;
 pub mod color_transform;
+pub mod hash;
 pub mod num;
 pub mod projective;
 
