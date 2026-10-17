@@ -340,6 +340,42 @@ impl ImageStore {
     pub fn is_empty(&self) -> bool {
         self.images.is_empty()
     }
+
+    /// Every image with its id, in id order.
+    pub fn entries(&self) -> impl Iterator<Item = (ImageId, &Image)> {
+        self.images.iter().map(|(id, image)| (*id, image))
+    }
+
+    /// Copies every image of `other` into this store and returns where each went: `other`'s id to this store's id.
+    ///
+    /// Nodes that were drawn from `other` follow with [`Node::remap_images`].
+    pub fn merge(&mut self, other: &Self) -> BTreeMap<ImageId, ImageId> {
+        other.entries().map(|(id, image)| (id, self.insert(image.clone()))).collect()
+    }
+}
+
+impl Node {
+    /// Points every bitmap of `nodes` (masks and mesh content included) at the id `map` gives for it. Ids the map
+    /// does not name stay as they are.
+    pub fn remap_images(nodes: &mut [Self], map: &BTreeMap<ImageId, ImageId>) {
+        for node in nodes {
+            match node {
+                Self::Bitmap(bitmap) => {
+                    if let Some(new) = map.get(&bitmap.image) {
+                        bitmap.image = *new;
+                    }
+                }
+                Self::Group(group) => {
+                    if let Some(mask) = group.mask.as_mut() {
+                        Self::remap_images(mask, map);
+                    }
+                    Self::remap_images(&mut group.children, map);
+                }
+                Self::Mesh(mesh) => Self::remap_images(&mut mesh.content, map),
+                Self::Fill(_) | Self::Stroke(_) => {}
+            }
+        }
+    }
 }
 
 impl DisplayList {
@@ -403,6 +439,33 @@ mod tests {
         store.remove(a);
         assert!(store.get(a).is_none());
         assert_eq!(store.get(b).unwrap().premultiplied_rgba, vec![255; 4]);
+    }
+
+    #[test]
+    fn merged_stores_renumber_the_nodes_drawn_from_them() {
+        let pixel = |v: u8| Image::new(1, 1, vec![v; 4]).unwrap();
+        let mut theirs = ImageStore::new();
+        let (a, b) = (theirs.insert(pixel(1)), theirs.insert(pixel(2)));
+        let mut ours = ImageStore::new();
+        let existing = ours.insert(pixel(9));
+        let map = ours.merge(&theirs);
+        assert_eq!(ours.len(), 3);
+        assert_eq!(map.len(), 2);
+        assert_ne!(map[&a], existing);
+        assert_eq!(ours.get(map[&b]).unwrap().premultiplied_rgba, vec![2; 4]);
+
+        let bitmap = |image| Node::Bitmap(Bitmap { transform: Affine::IDENTITY, image, smoothing: true });
+        let mesh = Node::Mesh(Mesh { transform: Affine::IDENTITY, content: vec![bitmap(b)], source: Vec::new(), target: Vec::new(), triangles: Vec::new() });
+        let group = Node::Group(Group { mask: Some(vec![bitmap(a)]), children: vec![bitmap(a), mesh, bitmap(ImageId(99))], ..Group::default() });
+        let mut nodes = vec![group];
+        Node::remap_images(&mut nodes, &map);
+        let mut seen = Vec::new();
+        DisplayList { size: Size::new(1.0, 1.0), background: None, nodes }.visit(&mut |node| {
+            if let Node::Bitmap(bitmap) = node {
+                seen.push(bitmap.image);
+            }
+        });
+        assert_eq!(seen, [map[&a], map[&a], map[&b], ImageId(99)]);
     }
 
     #[test]
