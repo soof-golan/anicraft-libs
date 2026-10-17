@@ -3,19 +3,13 @@
 use anim_core::{Affine, Point, num};
 use anim_display::Image;
 
-/// `c * a / 255`, rounded.
-pub fn mul255(c: u8, a: u8) -> u8 {
-    let v = u32::from(c).saturating_mul(u32::from(a)).saturating_add(127) / 255;
-    u8::try_from(v).unwrap_or(255)
-}
-
 /// Premultiplies straight RGBA8 in place.
 pub fn premultiply(rgba: &mut [u8]) {
     for [r, g, b, a] in rgba.as_chunks_mut::<4>().0 {
         if *a != 255 {
-            *r = mul255(*r, *a);
-            *g = mul255(*g, *a);
-            *b = mul255(*b, *a);
+            *r = num::mul255(*r, *a);
+            *g = num::mul255(*g, *a);
+            *b = num::mul255(*b, *a);
         }
     }
 }

@@ -458,6 +458,7 @@ version = "0.1.0"
 dependencies = [
  "anim-core",
  "anim-display",
+ "anim-testkit",
  "criterion",
  "crossbeam-channel",
  "filmcraft-aac",

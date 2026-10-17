@@ -1,10 +1,10 @@
 //! Converting between straight-alpha RGBA8 (what image decoders and encoders deal in) and the premultiplied RGBA8
 //! that [`anim_display::Image`] stores and the renderer produces.
 
+use anim_core::num::{mul255, unmul255};
 use anim_display::{Image, ImageError};
 
 use crate::par;
-use crate::pixel::mul255;
 
 /// An [`Image`] from straight-alpha RGBA8 bytes (`width * height * 4` of them), premultiplying every pixel.
 ///
@@ -36,12 +36,7 @@ pub fn straight_rgba(image: &Image) -> Vec<u8> {
     bytes.truncate(wanted);
     par::for_each_pixel(&mut bytes, |px| {
         let [red, green, blue, alpha] = *px;
-        let un = |c: u8| {
-            (u32::from(c).saturating_mul(255).saturating_add(u32::from(alpha) / 2))
-                .checked_div(u32::from(alpha))
-                .map_or(0, |v| u8::try_from(v).unwrap_or(u8::MAX))
-        };
-        *px = [un(red), un(green), un(blue), alpha];
+        *px = [unmul255(red, alpha), unmul255(green, alpha), unmul255(blue, alpha), alpha];
     });
     bytes
 }

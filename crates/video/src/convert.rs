@@ -7,6 +7,7 @@
 //! Alpha: MP4 has no alpha channel, so premultiplied colour is used as is (it equals the picture composited over black).
 //! `ProRes` 4444 with alpha stores straight colour, so the colour is un-premultiplied first.
 
+use anim_core::num::unmul255;
 use filmcraft_prores::Frame;
 
 const KY: [i32; 3] = [11966, 40255, 4064];
@@ -70,11 +71,7 @@ fn unpremultiply(pixel: [u8; 4]) -> [u8; 4] {
     if alpha == 0 {
         return [0, 0, 0, 0];
     }
-    let un = |c: u8| -> u8 {
-        let num = u32::from(c).saturating_mul(255).saturating_add(u32::from(alpha) / 2);
-        u8::try_from(num.checked_div(u32::from(alpha)).unwrap_or(0).min(255)).unwrap_or(255)
-    };
-    [un(red), un(green), un(blue), alpha]
+    [unmul255(red, alpha), unmul255(green, alpha), unmul255(blue, alpha), alpha]
 }
 
 /// Fills a `ProRes` frame (10-bit; 4:4:4 when `frame.chroma` is 4:4:4, otherwise 4:2:2) from `px`.

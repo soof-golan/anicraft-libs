@@ -2,6 +2,7 @@
 
 use std::io::Cursor;
 
+use anim_core::num::mul255;
 use anim_display::Image;
 
 /// Largest bitmap (in pixels) the built-in decoder accepts.
@@ -56,7 +57,7 @@ pub fn decode_png(bytes: &[u8]) -> Option<Image> {
     match frame.color_type {
         png::ColorType::Rgba => {
             for &[r, g, b, a] in data.as_chunks::<4>().0 {
-                out.extend_from_slice(&[premul(r, a), premul(g, a), premul(b, a), a]);
+                out.extend_from_slice(&[mul255(r, a), mul255(g, a), mul255(b, a), a]);
             }
         }
         png::ColorType::Rgb => {
@@ -66,7 +67,7 @@ pub fn decode_png(bytes: &[u8]) -> Option<Image> {
         }
         png::ColorType::GrayscaleAlpha => {
             for &[v, a] in data.as_chunks::<2>().0 {
-                let p = premul(v, a);
+                let p = mul255(v, a);
                 out.extend_from_slice(&[p, p, p, a]);
             }
         }
@@ -78,12 +79,6 @@ pub fn decode_png(bytes: &[u8]) -> Option<Image> {
         png::ColorType::Indexed => return None,
     }
     Image::new(w, h, out).ok()
-}
-
-/// `c * a / 255`, rounded.
-fn premul(c: u8, a: u8) -> u8 {
-    let v = u16::from(c).saturating_mul(u16::from(a)).saturating_add(127) / 255;
-    u8::try_from(v).unwrap_or(u8::MAX)
 }
 
 #[cfg(test)]

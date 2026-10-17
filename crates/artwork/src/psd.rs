@@ -4,7 +4,7 @@ use anim_core::{BlendMode, Point, Rect, Size, num};
 use anim_display::Image;
 use photocraft_psd::{BlendMode as PsdBlend, GrayImage, LayerNode, LayerRecord, PsdFile};
 
-use crate::raster::{mul255, premultiply};
+use crate::raster::premultiply;
 use crate::tree::{ArtKind, ArtMask, ArtNode, ArtworkTree, blends_backdrop};
 use crate::vmask::vector_mask;
 use crate::{ArtworkError, Limits, check_input};
@@ -213,7 +213,7 @@ fn scale_row(pixels: &mut [u8], mask: &[u8]) {
         match *m {
             255 => {}
             0 => *px = [0; 4],
-            m => px.iter_mut().for_each(|c| *c = mul255(*c, m)),
+            m => px.iter_mut().for_each(|c| *c = num::mul255(*c, m)),
         }
     }
 }

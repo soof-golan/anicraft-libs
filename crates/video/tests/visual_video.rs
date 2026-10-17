@@ -30,11 +30,11 @@
 )]
 
 use std::collections::BTreeMap;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use anim_core::FrameRate;
+use anim_core::num::mul255;
 use anim_display::Image;
 use anim_video::{AudioTrack, Codec, H264Rate, Summary, VideoSettings, encode_to_file};
 
@@ -55,10 +55,8 @@ fn skip(name: &str) -> bool {
 }
 
 fn out_dir() -> PathBuf {
-    let scratch = PathBuf::from("/mnt/data/anim/scratch/visual");
-    let fallback = if scratch.is_dir() { scratch } else { std::env::temp_dir() };
-    let dir = std::env::var_os("ANICRAFT_VISUAL_OUT").map_or(fallback, PathBuf::from);
-    let dir = dir.join("export-video").join("video");
+    let base = std::env::var_os("ANICRAFT_VISUAL_OUT").map_or_else(std::env::temp_dir, PathBuf::from);
+    let dir = base.join("export-video").join("video");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -83,8 +81,7 @@ fn h264(crf: f32) -> Codec {
 
 /// Premultiplied (rounded) from straight colour and alpha.
 fn premul(c: [u8; 3], a: u8) -> [u8; 4] {
-    let m = |v: u8| ((u32::from(v) * u32::from(a) + 127) / 255) as u8;
-    [m(c[0]), m(c[1]), m(c[2]), a]
+    [mul255(c[0], a), mul255(c[1], a), mul255(c[2], a), a]
 }
 
 fn probe(path: &Path) -> BTreeMap<String, String> {
@@ -162,31 +159,11 @@ fn near_u8(got: u8, want: f64, tol: f64, what: &str) {
     near(f64::from(got), want, tol, what);
 }
 
-/// Saves raw RGBA as a PNG (through ffmpeg), `k` times larger with nearest neighbour.
+/// Saves raw RGBA as a PNG, `k` times larger with nearest neighbour.
 fn save_png(name: &str, rgba: &[u8], w: usize, h: usize, k: usize) -> PathBuf {
     let path = out_dir().join(format!("{name}.png"));
-    let mut child = Command::new("ffmpeg")
-        .args([
-            "-v",
-            "error",
-            "-y",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-s",
-            &format!("{w}x{h}"),
-            "-i",
-            "-",
-            "-vf",
-            &format!("scale=iw*{k}:ih*{k}:flags=neighbor"),
-        ])
-        .arg(&path)
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(rgba).unwrap();
-    assert!(child.wait().unwrap().success());
+    let (w, h, k) = (w as u32, h as u32, k as u32);
+    anim_testkit::crop_zoom(rgba, w, 0, 0, w, h, k).save(&path).unwrap();
     path
 }
 
