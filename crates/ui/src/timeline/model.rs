@@ -228,7 +228,13 @@ pub struct TimelineModel {
     pub onion: OnionSkin,
     /// Playback is running: the timeline then scrolls to keep the playhead visible.
     pub playing: bool,
+    /// The timeline is a button's: the ruler names the first four frames Up, Over, Down and Hit.
+    #[serde(default)]
+    pub button_states: bool,
 }
+
+/// The ruler labels of a button timeline's first frames.
+pub const BUTTON_STATE_LABELS: [&str; 4] = ["Up", "Over", "Down", "Hit"];
 
 impl TimelineModel {
     /// Indices into `layers` of the rows currently visible (those not hidden inside a collapsed folder).

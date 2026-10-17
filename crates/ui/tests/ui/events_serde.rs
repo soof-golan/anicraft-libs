@@ -87,6 +87,7 @@ fn other_events_round_trip() {
         LibraryEvent::PreviewPlay,
         LibraryEvent::PreviewStop,
         LibraryEvent::PreviewSeek(500),
+        LibraryEvent::PreviewState(2),
     ] {
         round_trip(&e);
     }

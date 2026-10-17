@@ -420,7 +420,12 @@ fn paint_ruler(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, layout:
             let h = if major { 6.0 } else { 3.0 };
             painter.vline(geo.frame_width.mul_add(0.5, x), (geo.ruler.bottom() - h)..=geo.ruler.bottom(), Stroke::new(1.0, p.text_weak));
         }
-        if let Some(label) = ruler_label(f, step) {
+        // A button's first four frames are its states, named instead of numbered (initials when the cells are narrow).
+        let state = model.button_states.then(|| usize::try_from(f).ok().and_then(|i| super::model::BUTTON_STATE_LABELS.get(i).copied())).flatten();
+        if let Some(name) = state {
+            let text = if geo.frame_width >= 34.0 { name.to_owned() } else { name.chars().take(1).collect() };
+            painter.text(pos2(geo.frame_width.mul_add(0.5, x), geo.ruler.top() + 5.0), Align2::CENTER_TOP, text, font.clone(), p.text);
+        } else if let Some(label) = ruler_label(f, step) {
             painter.text(pos2(geo.frame_width.mul_add(0.5, x), geo.ruler.top() + 5.0), Align2::CENTER_TOP, label, font.clone(), p.text_weak);
         }
     }

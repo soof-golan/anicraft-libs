@@ -107,6 +107,7 @@ fn timeline_model() -> TimelineModel {
         fps: 24.0,
         onion: anim_ui::timeline::OnionSkin { enabled: true, outlines: false, before: 2, after: 2 },
         playing: false,
+        button_states: false,
     }
 }
 

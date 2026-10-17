@@ -70,6 +70,10 @@ pub struct LibraryPreview {
     pub progress_permille: u16,
     /// One line about the item: kind, size, duration.
     pub caption: String,
+    /// A button symbol: which of Up, Over, Down and Hit (0..=3) the picture shows. The controls row then holds the four
+    /// state buttons instead of the play button.
+    #[serde(default)]
+    pub button_state: Option<u8>,
 }
 
 /// The library panel's input.
@@ -113,6 +117,8 @@ pub enum LibraryEvent {
     PreviewStop,
     /// The progress bar or waveform was clicked: jump to this point (0..=1000).
     PreviewSeek(u16),
+    /// A button symbol's preview: show this state (0 Up, 1 Over, 2 Down, 3 Hit).
+    PreviewState(u8),
 }
 
 /// Height of the preview box.
@@ -205,7 +211,7 @@ fn preview(ui: &mut Ui, model: &LibraryModel) -> Vec<LibraryEvent> {
         return events;
     };
     let pv = &model.preview;
-    let controls = if pv.playable { 26.0 } else { 0.0 };
+    let controls = if pv.playable || pv.button_state.is_some() { 26.0 } else { 0.0 };
     let caption_h = 16.0;
     let picture = Rect::from_min_max(rect.min + vec2(6.0, 6.0), pos2(rect.right() - 6.0, rect.bottom() - controls - caption_h - 4.0));
     if !pv.waveform.is_empty() {
@@ -219,7 +225,17 @@ fn preview(ui: &mut Ui, model: &LibraryModel) -> Vec<LibraryEvent> {
     } else {
         paint(ui.painter(), Rect::from_center_size(picture.center(), vec2(40.0, 40.0)), item.kind.icon(), p.text_weak);
     }
-    if pv.playable {
+    if let Some(shown) = pv.button_state {
+        let bar = Rect::from_min_max(pos2(rect.left() + 6.0, rect.bottom() - controls - caption_h), pos2(rect.right() - 6.0, rect.bottom() - caption_h - 2.0));
+        let width = (bar.width() - 12.0) / 4.0;
+        for (i, label) in ["Up", "Over", "Down", "Hit"].into_iter().enumerate() {
+            let at = Rect::from_min_size(pos2(f32_from_usize(i).mul_add(width + 4.0, bar.left()), bar.top()), vec2(width, bar.height()));
+            let state = u8::try_from(i).unwrap_or(0);
+            if ui.put(at, egui::Button::selectable(shown == state, label)).clicked() {
+                events.push(LibraryEvent::PreviewState(state));
+            }
+        }
+    } else if pv.playable {
         let bar = Rect::from_min_max(pos2(rect.left() + 6.0, rect.bottom() - controls - caption_h), pos2(rect.right() - 6.0, rect.bottom() - caption_h - 2.0));
         let button = Rect::from_min_size(bar.min, vec2(bar.height(), bar.height()));
         let icon = if pv.playing { Icon::Stop } else { Icon::Play };
