@@ -6,6 +6,7 @@ mod common;
 mod armature;
 mod content;
 mod rules;
+mod symbols;
 mod tweens;
 mod visual_content;
 mod visual_shape;

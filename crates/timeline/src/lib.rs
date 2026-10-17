@@ -25,8 +25,10 @@
 //!   pose at the frame (symbol armatures) or deformed by them (shape armatures); poses tween between pose keyframes
 //!   (see [`armature`]).
 //! - **Symbols**: graphic instances are locked to the parent timeline (loop, play once, single frame from
-//!   `first_frame`); movie clips show `first_frame` unless [`EvalOptions::advance_movie_clips`]; buttons show Up.
-//!   Nesting is limited and cycles are cut.
+//!   `first_frame`); movie clips show `first_frame` unless [`EvalOptions::advance_movie_clips`]; buttons show Up, or the
+//!   state [`EvalOptions::button_state`] gives one instance ([`Evaluator::frame_of_button`] draws a whole button in a
+//!   state; a layer without a keyframe at the state's frame shows the state before it). A symbol with 9-slice guides
+//!   keeps its corners unscaled when an instance is scaled (see [`scale9`]). Nesting is limited and cycles are cut.
 //! - **Bitmaps** become bitmap nodes in an image store the evaluator fills through an [`ImageProvider`]; **text** is
 //!   shaped by `anim-text` (right-to-left included) into glyph fills.
 //! - **Onion skins**: [`Evaluator::onion`].
@@ -39,6 +41,7 @@ pub mod ease;
 pub mod guide;
 pub mod images;
 pub mod motion;
+pub mod scale9;
 pub mod tween;
 pub mod xform;
 

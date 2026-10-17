@@ -7,8 +7,8 @@ use anim_core::{Affine, ColorTransform, Rect, Rgba8, Size};
 use anim_display::{Bitmap, Fill, FillRule, Group, Image, ImageId, ImageStore, Node, Paint};
 use anim_morph::{MorphMode, MorphOptions, MorphPlan};
 use anim_scene::{
-    Document, EaseTarget, Element, Frame, Layer, LayerKind, LoopMode, MAX_GROUP_DEPTH, MediaStore, SymbolInstance, SymbolKind, Timeline, TweenType,
-    query::LayerNode, shape_bitmap_paths,
+    ButtonState, Document, EaseTarget, Element, Frame, Layer, LayerKind, LoopMode, MAX_GROUP_DEPTH, MediaStore, SymbolInstance, SymbolKind, Timeline,
+    TweenType, query::LayerNode, shape_bitmap_paths,
 };
 use anim_shape::EdgeShape;
 use anim_text::TextEngine;
@@ -18,6 +18,7 @@ use crate::guide::Guide;
 use crate::images::{ImageProvider, NoDecoder};
 use crate::memo::Memo;
 use crate::motion::MotionTracks;
+use crate::scale9;
 use crate::text::text_nodes;
 use crate::tween::{self, Placed};
 
@@ -42,11 +43,17 @@ pub struct EvalOptions {
     pub advance_movie_clips: bool,
     /// Deepest nesting of symbols followed. Default 16.
     pub max_symbol_depth: usize,
+    /// Enable Simple Buttons: the button instance with this [`element_key`] (a top-level element of the timeline
+    /// being drawn) shows this state instead of Up. Default none.
+    pub button_state: Option<(u64, ButtonState)>,
+    /// Every button instance, at any depth, shows this state instead of Up (the Hit state gives hit testing the areas
+    /// the buttons react in). A [`EvalOptions::button_state`] for one instance wins. Default none.
+    pub all_buttons: Option<ButtonState>,
 }
 
 impl Default for EvalOptions {
     fn default() -> Self {
-        Self { include_hidden: false, include_guides: false, advance_movie_clips: false, max_symbol_depth: 16 }
+        Self { include_hidden: false, include_guides: false, advance_movie_clips: false, max_symbol_depth: 16, button_state: None, all_buttons: None }
     }
 }
 
@@ -73,6 +80,9 @@ struct Time {
     frame: u32,
     /// The global frame, which movie clips follow.
     clock: u32,
+    /// The timeline is a button's and shows this state: a layer with nothing at the state's frame shows what the
+    /// state before it shows.
+    button: Option<ButtonState>,
 }
 
 #[derive(Default)]
@@ -235,7 +245,7 @@ impl<'a> Evaluator<'a> {
         let mut list = anim_display::DisplayList::new(Size::new(doc.width, doc.height), background);
         if let Some(timeline) = doc.scenes.get(scene) {
             let mut state = State::default();
-            self.timeline_nodes(timeline, Time { frame, clock: frame }, &mut state, &mut list.nodes);
+            self.timeline_nodes(timeline, Time { frame, clock: frame, button: None }, &mut state, &mut list.nodes);
         }
         list
     }
@@ -249,7 +259,22 @@ impl<'a> Evaluator<'a> {
         let mut list = anim_display::DisplayList::new(Size::new(doc.width, doc.height), None);
         if let Some(symbol) = doc.library.find_symbol(name) {
             let mut state = State { stack: vec![symbol.name.as_str()] };
-            self.timeline_nodes(&symbol.timeline, Time { frame, clock: frame }, &mut state, &mut list.nodes);
+            self.timeline_nodes(&symbol.timeline, Time { frame, clock: frame, button: None }, &mut state, &mut list.nodes);
+        }
+        list
+    }
+
+    /// A button symbol as it looks in `state`, for previews and for the hit area: a layer with nothing at the
+    /// state's frame shows what the state before it shows (Over and Down fall back to Up, Hit to Up). An unknown
+    /// symbol gives an empty list.
+    #[must_use]
+    pub fn frame_of_button(&mut self, name: &str, state: ButtonState) -> anim_display::DisplayList {
+        let doc = self.doc;
+        let mut list = anim_display::DisplayList::new(Size::new(doc.width, doc.height), None);
+        if let Some(symbol) = doc.library.find_symbol(name) {
+            let mut stack = State { stack: vec![symbol.name.as_str()] };
+            let time = Time { frame: state.frame(), clock: state.frame(), button: Some(state) };
+            self.timeline_nodes(&symbol.timeline, time, &mut stack, &mut list.nodes);
         }
         list
     }
@@ -340,7 +365,8 @@ impl<'a> Evaluator<'a> {
 
     fn layer_nodes(&mut self, timeline: &'a Timeline, layer_index: usize, time: Time, state: &mut State<'a>, out: &mut Vec<Node>) {
         let Some(layer) = timeline.layers.get(layer_index) else { return };
-        let Some(keyframe) = layer.keyframe_at(time.frame) else { return };
+        let covering = time.button.map_or_else(|| layer.keyframe_at(time.frame), |button| anim_scene::symbols::button_state_keyframe(layer, button));
+        let Some(keyframe) = covering else { return };
         let top = state.stack.is_empty();
         let (keyframe, items) = if layer.armature.is_some() {
             let rest = layer.rest_keyframe().unwrap_or(keyframe);
@@ -476,11 +502,15 @@ impl<'a> Evaluator<'a> {
                 if !instance.visible {
                     return None;
                 }
-                let children = self.symbol_nodes(instance, since, time, state);
+                let (children, local) = self.symbol_nodes(instance, key, since, time, state);
                 // A 3D instance is drawn flat and projected: its 3D matrix carries the whole placement.
                 let (transform, projection) = match placed.matrix_3d {
                     Some(m3) => (Affine::IDENTITY, Some(m3.homography(&self.doc.perspective()))),
                     None => (placed.matrix, None),
+                };
+                let (transform, children) = match self.nine_slice(&instance.library_item_name, local, transform, projection.is_some(), &children) {
+                    Some((outer, pieces)) => (outer, pieces),
+                    None => (transform, children),
                 };
                 Some(Node::Group(Group {
                     transform,
@@ -590,15 +620,19 @@ impl<'a> Evaluator<'a> {
     ///   the instance's keyframe started; loop wraps, play once holds the last frame, single frame holds
     ///   `first_frame`.
     /// - Movie clip: `first_frame` (authoring), or with `advance_movie_clips` the global frame, wrapped.
-    /// - Button: the Up frame (label `_up`, else frame 0).
-    fn symbol_nodes(&mut self, instance: &'a SymbolInstance, since: u32, time: Time, state: &mut State<'a>) -> Vec<Node> {
+    /// - Button: the Up frame (label `_up`, else frame 0), or, for the instance [`EvalOptions::button_state`] names,
+    ///   the frame of its state; a layer with nothing at that frame shows what the state before it shows.
+    ///
+    /// Returns the nodes and the frame to take the symbol's bounds at.
+    fn symbol_nodes(&mut self, instance: &'a SymbolInstance, key: Option<u64>, since: u32, time: Time, state: &mut State<'a>) -> (Vec<Node>, u32) {
         let doc = self.doc;
-        let Some(symbol) = doc.library.find_symbol(&instance.library_item_name) else { return Vec::new() };
+        let Some(symbol) = doc.library.find_symbol(&instance.library_item_name) else { return (Vec::new(), 0) };
         if state.stack.len() >= self.options.max_symbol_depth || state.stack.contains(&symbol.name.as_str()) {
-            return Vec::new();
+            return (Vec::new(), 0);
         }
         let length = symbol.timeline.frame_count().max(1);
         let last = length.saturating_sub(1);
+        let mut button = None;
         let local = match instance.effective_kind(&doc.library) {
             SymbolKind::Graphic => match instance.effective_loop_mode() {
                 LoopMode::Loop => instance.first_frame.saturating_add(since).checked_rem(length).unwrap_or(0),
@@ -612,13 +646,50 @@ impl<'a> Evaluator<'a> {
                     instance.first_frame.min(last)
                 }
             }
-            SymbolKind::Button => symbol.timeline.labels().iter().find(|(_, l)| *l == "_up").map_or(0, |(f, _)| *f).min(last),
+            SymbolKind::Button => {
+                let one = self.options.button_state.filter(|(k, _)| key == Some(*k)).map(|(_, s)| s);
+                let wanted = one.or(self.options.all_buttons).unwrap_or(ButtonState::Up);
+                let up_label = symbol.timeline.labels().iter().find(|(_, l)| *l == "_up").map(|(f, _)| *f);
+                if let (ButtonState::Up, Some(frame)) = (wanted, up_label) {
+                    frame.min(last)
+                } else {
+                    button = Some(wanted);
+                    wanted.frame()
+                }
+            }
         };
+        let bounds_frame = if button.is_some() { 0 } else { local };
         state.stack.push(symbol.name.as_str());
         let mut nodes = Vec::new();
-        self.timeline_nodes(&symbol.timeline, Time { frame: local, clock: time.clock }, state, &mut nodes);
+        self.timeline_nodes(&symbol.timeline, Time { frame: local, clock: time.clock, button }, state, &mut nodes);
         state.stack.pop();
-        nodes
+        (nodes, bounds_frame)
+    }
+
+    /// The nine pieces of an instance of `symbol` placed by `matrix`, when the symbol has 9-slice guides and the
+    /// matrix scales: the group transform that holds them and the pieces, each the symbol's `content` clipped to its
+    /// part. `None` draws the instance as it is.
+    fn nine_slice(&self, symbol: &str, bounds_frame: u32, matrix: Affine, projected: bool, content: &[Node]) -> Option<(Affine, Vec<Node>)> {
+        if projected || content.is_empty() {
+            return None;
+        }
+        let grid = self.doc.library.find_symbol(symbol)?.scale9_grid?;
+        let bounds = self.symbol_bounds(symbol, bounds_frame)?;
+        let plan = scale9::plan(matrix, grid, bounds)?;
+        let pieces = plan
+            .pieces
+            .into_iter()
+            .map(|piece| {
+                let mask = Node::Fill(Fill {
+                    transform: Affine::IDENTITY,
+                    path: piece.source.to_path(0.1),
+                    rule: FillRule::NonZero,
+                    paint: Paint::Solid(Rgba8::BLACK),
+                });
+                Node::Group(Group { transform: piece.transform, mask: Some(vec![mask]), children: content.to_vec(), ..Group::default() })
+            })
+            .collect();
+        Some((plan.outer, pieces))
     }
 }
 
