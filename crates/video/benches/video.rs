@@ -21,15 +21,11 @@
 use std::hint::black_box;
 
 use anim_core::FrameRate;
+use anim_core::hash::Fnv1a;
 use anim_display::Image;
+use anim_testkit::synth::noise;
 use anim_video::{AudioTrack, Codec, H264Rate, VideoSettings, encode_to_file};
 use criterion::{Criterion, criterion_group, criterion_main};
-
-/// Deterministic noise in 0..1.
-fn noise(i: u32) -> f64 {
-    let x = i.wrapping_mul(2_654_435_761).rotate_left(13).wrapping_mul(40_503);
-    f64::from(x >> 8) / f64::from(1_u32 << 24)
-}
 
 /// A premultiplied frame: a moving gradient with a little noise and a soft-edged disc, alpha 255 outside the disc
 /// when `alpha` is false and a vignette when it is true.
@@ -62,7 +58,7 @@ fn tone(seconds: u32, rate: u32) -> AudioTrack {
 }
 
 fn hash(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+    Fnv1a::of(bytes)
 }
 
 /// Encodes `frames` to a temporary file and returns its bytes.

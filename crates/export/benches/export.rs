@@ -21,7 +21,8 @@
 
 use std::hint::black_box;
 
-use anim_core::kurbo::{Circle, Shape};
+use anim_core::hash::Fnv1a;
+use anim_core::kurbo::{Circle, Rect, Shape};
 use anim_core::{Affine, BezPath, Point, Rgba8, Size};
 use anim_display::{
     DisplayList, Fill, FillRule, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Mesh, Node, Paint, Spread, Stroke, StrokeStyle,
@@ -30,6 +31,7 @@ use anim_export::{
     AnimatedSvgOptions, GifOptions, RasterOptions, SheetLayout, SheetOptions, SvgOptions, VecFrameSource, build_sprite_sheet, display_list_to_svg, encode_png,
     export_animated_svg, export_gif, render_frame,
 };
+use anim_testkit::synth::noise;
 use criterion::{Criterion, criterion_group, criterion_main};
 
 const RED: Rgba8 = Rgba8::opaque(255, 0, 0);
@@ -37,13 +39,7 @@ const BLUE: Rgba8 = Rgba8::opaque(0, 0, 255);
 const GREEN: Rgba8 = Rgba8::opaque(0, 160, 0);
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> BezPath {
-    let mut path = BezPath::new();
-    path.move_to((x0, y0));
-    path.line_to((x1, y0));
-    path.line_to((x1, y1));
-    path.line_to((x0, y1));
-    path.close_path();
-    path
+    Rect::new(x0, y0, x1, y1).to_path(0.05)
 }
 
 fn circle(cx: f64, cy: f64, radius: f64) -> BezPath {
@@ -66,12 +62,6 @@ fn gradient(stops: &[(f32, Rgba8)]) -> Gradient {
         interpolation: Interpolation::Rgb,
         focal: 0.0,
     }
-}
-
-/// Deterministic noise in 0..1.
-fn noise(i: u32) -> f64 {
-    let x = i.wrapping_mul(2_654_435_761).rotate_left(13).wrapping_mul(40_503);
-    f64::from(x >> 8) / f64::from(1_u32 << 24)
 }
 
 /// Many circles, strokes and gradient fills in nested groups: the SVG emitter's stress case.
@@ -167,7 +157,7 @@ fn varied_source(frames: u32) -> VecFrameSource {
 }
 
 fn hash(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+    Fnv1a::of(bytes)
 }
 
 /// One timed operation; it returns its output bytes so a checksum can be taken.

@@ -23,6 +23,7 @@
 use std::hint::black_box;
 
 use anim_core::Point;
+use anim_core::hash::Fnv1a;
 use anim_text::{Alignment, Direction, Motion, Paragraph, RichText, Run, TextEngine, TextLayout};
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -142,8 +143,7 @@ fn display_benches(c: &mut Criterion) {
     let nodes = engine.to_display(&layout);
     if std::env::var_os("BENCH_CHECKSUM").is_some() {
         let text = format!("{nodes:?} {:?}", engine.ink_bounds(&layout));
-        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
-        eprintln!("checksum display: {} nodes {hash:016x}", nodes.len());
+        eprintln!("checksum display: {} nodes {:016x}", nodes.len(), Fnv1a::of(text.as_bytes()));
     }
     group.bench_function("to_display-warm", |b| b.iter(|| black_box(engine.to_display(black_box(&layout)))));
     group.bench_function("to_display-cold", |b| b.iter(|| black_box(layout.to_display())));
@@ -219,8 +219,7 @@ fn query_benches(c: &mut Criterion) {
             .map(|&o| (many.caret_rect(many.caret_at(o + 1), 1.0), many.word_range_at(o + 2), many.selection_rects(o.saturating_sub(3)..o + 5)))
             .collect();
         let text = format!("{results:?}");
-        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3));
-        eprintln!("checksum queries: {hash:016x}");
+        eprintln!("checksum queries: {:016x}", Fnv1a::of(text.as_bytes()));
     }
     group.bench_function("many-paragraphs-caret_rect", |b| {
         b.iter(|| {

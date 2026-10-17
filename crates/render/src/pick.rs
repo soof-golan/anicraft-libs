@@ -253,13 +253,7 @@ mod tests {
     use anim_display::{Cap, Image, StrokeStyle};
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> BezPath {
-        let mut path = BezPath::new();
-        path.move_to((x0, y0));
-        path.line_to((x1, y0));
-        path.line_to((x1, y1));
-        path.line_to((x0, y1));
-        path.close_path();
-        path
+        anim_core::Rect::new(x0, y0, x1, y1).to_path(0.05)
     }
 
     fn fill(path: BezPath, color: Rgba8) -> Node {

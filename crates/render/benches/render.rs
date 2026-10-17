@@ -19,13 +19,15 @@
 
 use std::hint::black_box;
 
-use anim_core::kurbo::{Circle, Shape};
+use anim_core::hash::Fnv1a;
+use anim_core::kurbo::{Circle, Rect, Shape};
 use anim_core::{Affine, BezPath, BlendMode, ColorTransform, Point, Rgba8, Size};
 use anim_display::{
     Bitmap, DisplayList, Fill, FillRule, Filter, Gradient, GradientStop, Group, Image, ImageStore, Interpolation, Mesh, Node, Paint, Spread, Stroke,
     StrokeStyle,
 };
 use anim_render::{RenderOptions, Renderer};
+use anim_testkit::synth::noise;
 use criterion::{Criterion, criterion_group, criterion_main};
 
 const RED: Rgba8 = Rgba8::opaque(255, 0, 0);
@@ -49,13 +51,7 @@ impl Scene {
 }
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> BezPath {
-    let mut path = BezPath::new();
-    path.move_to((x0, y0));
-    path.line_to((x1, y0));
-    path.line_to((x1, y1));
-    path.line_to((x0, y1));
-    path.close_path();
-    path
+    Rect::new(x0, y0, x1, y1).to_path(0.05)
 }
 
 fn circle(cx: f64, cy: f64, radius: f64) -> BezPath {
@@ -82,12 +78,6 @@ fn gradient(spread: Spread, focal: f64, stops: &[(f32, Rgba8)]) -> Gradient {
 
 fn group(children: Vec<Node>) -> Group {
     Group { children, ..Group::default() }
-}
-
-/// Deterministic noise in 0..1.
-fn noise(i: u32) -> f64 {
-    let x = i.wrapping_mul(2_654_435_761).rotate_left(13).wrapping_mul(40_503);
-    f64::from(x >> 8) / f64::from(1_u32 << 24)
 }
 
 /// 400 circles and 400 stroked lines on a Full HD frame.
@@ -271,7 +261,7 @@ fn mesh() -> Scene {
 }
 
 fn checksum(image: &Image) -> u64 {
-    image.premultiplied_rgba.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+    Fnv1a::of(&image.premultiplied_rgba)
 }
 
 fn render_benches(c: &mut Criterion) {
