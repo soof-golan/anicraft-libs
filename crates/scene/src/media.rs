@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use anim_core::hash::Fnv1a;
 use serde::{Deserialize, Serialize};
 
 use crate::error::SceneError;
@@ -17,14 +18,7 @@ impl MediaId {
     /// The id a blob of `bytes` would get in an empty store.
     #[must_use]
     pub fn of(bytes: &[u8]) -> Self {
-        const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-        const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let mut hash = OFFSET;
-        for &b in bytes {
-            hash ^= u64::from(b);
-            hash = hash.wrapping_mul(PRIME);
-        }
-        Self(hash)
+        Self(Fnv1a::of(bytes))
     }
 }
 

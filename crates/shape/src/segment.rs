@@ -1,5 +1,8 @@
 //! Path segments in twips.
 
+use std::hash::Hasher;
+
+use anim_core::hash::Fnv1a;
 use anim_core::kurbo::{CubicBez, Line, PathSeg, QuadBez};
 use anim_core::{Point, Vec2};
 use serde::{Deserialize, Serialize};
@@ -132,19 +135,13 @@ fn first_nonzero(origin: Point, candidates: [Point; 3]) -> Vec2 {
 /// A 64-bit FNV-1a fingerprint of the exact coordinates, used to tell whether an edge changed since it was read.
 #[must_use]
 pub fn fingerprint(segments: &[Segment]) -> u64 {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-    let mut hash = OFFSET;
-    let mut feed = |value: f64| {
-        for byte in value.to_bits().to_le_bytes() {
-            hash = (hash ^ u64::from(byte)).wrapping_mul(PRIME);
-        }
-    };
+    let mut hash = Fnv1a::new();
+    let mut feed = |value: f64| hash.write(&value.to_bits().to_le_bytes());
     feed(f64::from(u32::try_from(segments.len()).unwrap_or(u32::MAX)));
     for segment in segments {
         segment.visit_coords(&mut feed);
     }
-    hash
+    hash.finish()
 }
 
 #[cfg(test)]
