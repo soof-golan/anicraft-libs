@@ -245,6 +245,7 @@ dependencies = [
  "anim-core",
  "anim-display",
  "anim-render",
+ "anim-testkit",
  "base64 0.22.1",
  "criterion",
  "gif",

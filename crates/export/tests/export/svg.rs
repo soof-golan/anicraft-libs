@@ -26,7 +26,6 @@
 use crate::common;
 
 use std::collections::BTreeSet;
-use std::io::Cursor;
 
 use anim_core::{Affine, Point, Rgba8, Size};
 use anim_display::{DisplayList, Fill, FillRule, Group, ImageStore, Mesh, Node, Paint};
@@ -133,9 +132,7 @@ fn embedded_image_is_a_straight_alpha_png() {
     let href = image.attribute((XLINK, "href")).unwrap();
     let data = href.strip_prefix("data:image/png;base64,").unwrap();
     let bytes = base64::engine::general_purpose::STANDARD.decode(data).unwrap();
-    let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info().unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    reader.next_frame(&mut buf).unwrap();
+    let buf = anim_testkit::decode_png(&bytes).unwrap().rgba;
     assert_eq!(&buf[0..4], &[255, 0, 0, 255]);
     assert_eq!(&buf[12..16], &[255, 255, 255, 128], "premultiplied 128/128 un-premultiplies to white at half alpha");
 }

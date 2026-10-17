@@ -19,13 +19,9 @@ use std::process::Command;
 
 use anim_export::RgbaFrame;
 
-/// Where renders go: `ANICRAFT_VISUAL_OUT`, else the shared scratch folder when it exists, else the system temp dir.
+/// Where renders go: `ANICRAFT_VISUAL_OUT`, else the system temp dir (the GIF and SVG checks read their files back).
 pub fn out_dir() -> PathBuf {
-    let dir = std::env::var_os("ANICRAFT_VISUAL_OUT").map(PathBuf::from).unwrap_or_else(|| {
-        let scratch = PathBuf::from("/mnt/data/anim/scratch/visual");
-        if scratch.is_dir() { scratch } else { std::env::temp_dir() }
-    });
-    let dir = dir.join("export-video");
+    let dir = std::env::var_os("ANICRAFT_VISUAL_OUT").map_or_else(std::env::temp_dir, PathBuf::from).join("export-video");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -37,16 +33,8 @@ pub fn save(name: &str, frame: &RgbaFrame) -> PathBuf {
 }
 
 pub fn decode_png(bytes: &[u8]) -> RgbaFrame {
-    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    buf.truncate(info.buffer_size());
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => buf,
-        png::ColorType::Rgb => buf.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
-        other => panic!("unexpected PNG colour type {other:?}"),
-    };
-    RgbaFrame { width: info.width, height: info.height, rgba }
+    let png = anim_testkit::decode_png(bytes).unwrap();
+    RgbaFrame { width: png.width, height: png.height, rgba: png.rgba }
 }
 
 pub fn px(frame: &RgbaFrame, x: u32, y: u32) -> [u8; 4] {
@@ -57,14 +45,8 @@ pub fn px(frame: &RgbaFrame, x: u32, y: u32) -> [u8; 4] {
 
 /// Crops `(x, y, w, h)` and scales it up `k` times with nearest neighbour.
 pub fn crop_zoom(frame: &RgbaFrame, x: u32, y: u32, w: u32, h: u32, k: u32) -> RgbaFrame {
-    let (w, h) = (w.min(frame.width.saturating_sub(x)), h.min(frame.height.saturating_sub(y)));
-    let mut rgba = Vec::with_capacity((w * h * k * k * 4) as usize);
-    for oy in 0..h * k {
-        for ox in 0..w * k {
-            rgba.extend_from_slice(&px(frame, x + ox / k, y + oy / k));
-        }
-    }
-    RgbaFrame { width: w * k, height: h * k, rgba }
+    let crop = anim_testkit::crop_zoom(&frame.rgba, frame.width, x, y, w, h, k);
+    RgbaFrame { width: crop.width, height: crop.height, rgba: crop.rgba }
 }
 
 /// Composites onto an opaque colour so two pictures can be compared whatever their alpha.

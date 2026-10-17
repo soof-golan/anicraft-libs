@@ -109,40 +109,23 @@ pub fn px(v: f64) -> u32 {
     v.floor().max(0.0) as u32
 }
 
-/// Straight-alpha RGBA bytes of an image.
-fn straight(image: &Image) -> Vec<u8> {
-    let mut out = image.premultiplied_rgba.clone();
-    for p in out.chunks_exact_mut(4) {
-        let a = u32::from(p[3]);
-        if a != 0 && a != 255 {
-            for c in &mut p[..3] {
-                *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
-            }
-        }
-    }
-    out
-}
-
 /// Writes `image` as a PNG to `path`.
 pub fn write_png(image: &Image, path: &std::path::Path) {
-    let _ = anim_testkit::write_png(path, image.width, image.height, &straight(image));
+    let _ = anim_testkit::write_png(path, image.width, image.height, &anim_render::straight_rgba(image));
 }
 
-/// Saves a render for inspection under the scratch directory.
+/// Saves a render for inspection under `$ANICRAFT_VISUAL_OUT/anim-timeline`, when that is set.
 pub fn save(image: &Image, name: &str) {
-    write_png(image, &std::path::Path::new("/mnt/data/anim/scratch/visual/anim-timeline").join(format!("{name}.png")));
+    if let Some(dir) = anim_testkit::out_dir("anim-timeline") {
+        write_png(image, &dir.join(format!("{name}.png")));
+    }
 }
 
-/// Crops `w` x `h` at (`x`, `y`) and scales it `k` times with nearest neighbour.
+/// Crops `w` x `h` at (`x`, `y`) and scales it `k` times with nearest neighbour. A nearest-neighbour crop of
+/// premultiplied bytes is the same operation as one of straight bytes.
 pub fn zoom(image: &Image, x: u32, y: u32, w: u32, h: u32, k: u32) -> Image {
-    let mut out = Vec::new();
-    for oy in 0..h * k {
-        for ox in 0..w * k {
-            let (sx, sy) = ((x + ox / k).min(image.width - 1), (y + oy / k).min(image.height - 1));
-            out.extend_from_slice(&pixel(image, sx, sy));
-        }
-    }
-    Image { width: w * k, height: h * k, premultiplied_rgba: out }
+    let crop = anim_testkit::crop_zoom(&image.premultiplied_rgba, image.width, x, y, w, h, k);
+    Image { width: crop.width, height: crop.height, premultiplied_rgba: crop.rgba }
 }
 
 /// Lays images out in a grid (cell size = the largest), with a grey gutter, each scaled by `k`.
@@ -180,7 +163,7 @@ pub fn golden(image: &Image, name: &str) {
     drop(file);
     let golden = anim_testkit::read_png(&path).unwrap();
     assert_eq!((golden.width, golden.height), (image.width, image.height), "{name}: golden size");
-    let want = straight(image);
+    let want = anim_render::straight_rgba(image);
     let bad = golden.rgba.chunks_exact(4).zip(want.chunks_exact(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 6)).count();
     assert!(bad * 500 <= (image.width * image.height) as usize, "{name}: {bad} pixels differ from the golden");
 }

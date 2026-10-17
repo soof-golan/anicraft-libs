@@ -22,15 +22,7 @@ use common::*;
 use proptest::prelude::*;
 
 fn png_bytes(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    {
-        let mut enc = png::Encoder::new(&mut out, width, height);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        let mut w = enc.write_header().unwrap();
-        w.write_image_data(rgba).unwrap();
-    }
-    out
+    anim_testkit::encode_png(width, height, rgba).unwrap()
 }
 
 /// A document with a 2x2 bitmap "pic" (all blue) in `media`, shown scaled by 20 at the origin.

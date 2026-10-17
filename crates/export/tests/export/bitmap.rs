@@ -36,12 +36,8 @@ use anim_export::{
 use common::{RED, WHITE, moving_square};
 
 fn decode_png(bytes: &[u8]) -> (u32, u32, Vec<u8>) {
-    let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info().unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    assert_eq!(info.color_type, png::ColorType::Rgba);
-    buf.truncate(info.buffer_size());
-    (info.width, info.height, buf)
+    let png = anim_testkit::decode_png(bytes).unwrap();
+    (png.width, png.height, png.rgba)
 }
 
 fn pixel(buf: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
