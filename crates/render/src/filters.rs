@@ -9,7 +9,7 @@
 //! `[i + 0.5 - w/2, i + 0.5 + w/2]`, with partial pixels at the ends, which also gives smooth sub-pixel shifts.
 //! Rows and columns are independent, so the work runs in parallel with identical results.
 
-use anim_core::num::{ceil_f64_to_i32, f64_to_f32, usize_to_f64};
+use anim_core::num::{ceil_f64_to_i32, f64_to_f32, trunc_f64_to_i32, usize_to_f64};
 use anim_core::{Affine, Rgba8};
 use anim_display::Filter;
 use rayon::prelude::*;
@@ -136,12 +136,6 @@ struct RowScratch {
     original: Vec<f32>,
 }
 
-/// Truncates towards zero and saturates into `i32`.
-#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "float-to-int `as` saturates and maps NaN to 0")]
-const fn trunc_to_i32(v: f64) -> i32 {
-    v as i32
-}
-
 /// Box-filters one row of a single-channel plane in place.
 fn box_row(row: &mut [f32], scratch: &mut RowScratch, width: f64, shift: f64) {
     let count = row.len();
@@ -167,7 +161,7 @@ fn box_row(row: &mut [f32], scratch: &mut RowScratch, width: f64, shift: f64) {
             return total;
         }
         // `t` is positive here, so truncating is flooring, without the library call `floor` costs on baseline x86.
-        let cell = trunc_to_i32(t);
+        let cell = trunc_f64_to_i32(t);
         let index = usize::try_from(cell).unwrap_or(0);
         let whole = prefix.get(index).copied().unwrap_or(0.0);
         let part = original.get(index).copied().map_or(0.0, f64::from);

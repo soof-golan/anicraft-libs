@@ -11,6 +11,7 @@ use std::collections::hash_map::Entry;
 use std::hash::Hasher as _;
 
 use anim_core::kurbo::PathEl;
+use anim_core::num::floor_f64_to_i64;
 use anim_core::{BezPath, Point};
 use rustc_hash::{FxHashMap, FxHasher};
 
@@ -194,21 +195,9 @@ struct Grid {
     next: Vec<Option<usize>>,
 }
 
-/// `v.floor()` as an `i64` without the library call `floor` costs on baseline x86 (NaN is 0, out of range saturates).
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    reason = "float-to-int `as` saturates; the round trip is exact below 2^53 and only compared above"
-)]
-const fn floor_cell(v: f64) -> i64 {
-    let truncated = v as i64;
-    if (truncated as f64) > v { truncated.saturating_sub(1) } else { truncated }
-}
-
 impl Grid {
     const fn key(p: Point) -> (i64, i64) {
-        (floor_cell(p.x), floor_cell(p.y))
+        (floor_f64_to_i64(p.x), floor_f64_to_i64(p.y))
     }
 
     fn insert(&mut self, p: Point, id: usize) {
