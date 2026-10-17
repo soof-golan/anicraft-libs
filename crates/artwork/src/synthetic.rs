@@ -26,6 +26,54 @@ pub const fn hidden(mut node: ArtNode) -> ArtNode {
     node
 }
 
+/// The flat colour of the `index`-th mouth shape of [`face`]: every shape differs, so a render shows which one is up.
+#[must_use]
+pub fn mouth_colour(index: usize) -> [u8; 3] {
+    let step = u8::try_from(index).unwrap_or(u8::MAX);
+    [20_u8.saturating_add(step.saturating_mul(15)), 220_u8.saturating_sub(step.saturating_mul(12)), 40_u8.saturating_add(step.saturating_mul(5))]
+}
+
+/// A 200 x 200 face of rectangles named like a Character Animator puppet.
+///
+/// A body with a torso, and a head with a face, left and right eyes (a white, a pupil and a hidden blink lid), brows and
+/// a `mouth` group with one rectangle per name in `mouth_shapes`, coloured by [`mouth_colour`] and hidden except the one
+/// called `shown`. The pieces sit where a 200 pixel stage wants them: face at 50, 20 (100 x 100), eyes at x 110 and 60,
+/// mouth at 85, 90 (30 x 15).
+#[must_use]
+pub fn face(mouth_shapes: &[&str], shown: &str) -> ArtworkTree {
+    let eye = |side: &str, x: f64| {
+        ArtNode::group(
+            format!("{side} Eye"),
+            vec![
+                rect("White", x, 50.0, 30, 20, [255, 255, 255]),
+                rect(&format!("+ {side} Pupil"), x + 10.0, 55.0, 10, 10, [10, 10, 10]),
+                hidden(rect(&format!("{side} Blink"), x, 58.0, 30, 4, [30, 60, 220])),
+            ],
+        )
+    };
+    let shapes = mouth_shapes
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let node = rect(name, 85.0, 90.0, 30, 15, mouth_colour(index));
+            if *name == shown { node } else { hidden(node) }
+        })
+        .collect();
+    let head = ArtNode::group(
+        "Head",
+        vec![
+            rect("Face", 50.0, 20.0, 100, 100, [240, 190, 160]),
+            eye("Left", 110.0),
+            eye("Right", 60.0),
+            rect("+Left Eyebrow", 110.0, 36.0, 30, 10, [90, 40, 10]),
+            rect("+ right eyebrow", 60.0, 36.0, 30, 10, [90, 40, 10]),
+            ArtNode::group("mouth", shapes),
+        ],
+    );
+    let body = ArtNode::group("Body", vec![rect("Torso", 60.0, 120.0, 80, 80, [120, 120, 130])]);
+    tree(200, 200, vec![body, head])
+}
+
 /// A `w` x `h` artwork tree whose unnamed root holds `children`.
 #[must_use]
 pub fn tree(w: u32, h: u32, children: Vec<ArtNode>) -> ArtworkTree {
@@ -53,6 +101,18 @@ mod tests {
         assert_eq!(art.size, Size::new(40.0, 30.0));
         assert_eq!(art.root.children().iter().map(|n| n.visible).collect::<Vec<_>>(), [false, true]);
         assert_eq!(art.names(), ["", "a", "b"]);
+    }
+
+    #[test]
+    fn the_face_shows_one_mouth_shape() {
+        let art = face(&["Neutral", "Ah", "Oh"], "Ah");
+        assert_eq!(art.size, Size::new(200.0, 200.0));
+        let mouth = art.find("mouth").unwrap();
+        let shown: Vec<(&str, bool)> = mouth.children().iter().map(|n| (n.name.as_str(), n.visible)).collect();
+        assert_eq!(shown, [("Neutral", false), ("Ah", true), ("Oh", false)]);
+        assert!(art.find("+ Left Pupil").is_some() && art.find("Right Blink").is_some_and(|n| !n.visible));
+        assert_eq!(mouth_colour(0), [20, 220, 40]);
+        assert_eq!(mouth_colour(13), [215, 64, 105]);
     }
 
     #[test]
