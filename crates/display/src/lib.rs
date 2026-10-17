@@ -144,6 +144,28 @@ pub struct GradientStop {
     pub color: Rgba8,
 }
 
+impl GradientStop {
+    /// The colour of a gradient with these `stops` (sorted by offset) at `offset`.
+    ///
+    /// Between two stops the colours blend channel by channel; before the first and after the last the end colours
+    /// hold; no stops at all is transparent.
+    #[must_use]
+    pub fn color_at(stops: &[Self], offset: f32) -> Rgba8 {
+        let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba8::TRANSPARENT };
+        if offset <= first.offset {
+            return first.color;
+        }
+        for (lo, hi) in stops.iter().zip(stops.iter().skip(1)) {
+            if offset <= hi.offset {
+                let span = f64::from(hi.offset - lo.offset);
+                let t = if span > 0.0 { f64::from(offset - lo.offset) / span } else { 1.0 };
+                return lo.color.lerp(hi.color, t);
+            }
+        }
+        last.color
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Spread {
     #[default]
@@ -352,6 +374,17 @@ impl DisplayList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gradient_colour_blends_between_stops_and_holds_at_the_ends() {
+        let stop = |offset, color| GradientStop { offset, color };
+        let stops = [stop(0.25, Rgba8::BLACK), stop(0.75, Rgba8::WHITE), stop(0.75, Rgba8::opaque(255, 0, 0))];
+        assert_eq!(GradientStop::color_at(&stops, 0.0), Rgba8::BLACK);
+        assert_eq!(GradientStop::color_at(&stops, 0.5), Rgba8::opaque(128, 128, 128));
+        assert_eq!(GradientStop::color_at(&stops, 0.75), Rgba8::WHITE, "a hard edge reads as its first stop");
+        assert_eq!(GradientStop::color_at(&stops, 1.0), Rgba8::opaque(255, 0, 0));
+        assert_eq!(GradientStop::color_at(&[], 0.5), Rgba8::TRANSPARENT);
+    }
 
     #[test]
     fn image_validates_length() {

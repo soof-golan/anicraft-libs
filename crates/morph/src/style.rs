@@ -22,21 +22,6 @@ pub fn lerp_affine(a: Affine, b: Affine, t: f64) -> Affine {
     Affine::new(out)
 }
 
-fn color_at(stops: &[GradientStop], offset: f32) -> Rgba8 {
-    let (Some(first), Some(last)) = (stops.first(), stops.last()) else { return Rgba8::TRANSPARENT };
-    if offset <= first.offset {
-        return first.color;
-    }
-    for (lo, hi) in stops.iter().zip(stops.iter().skip(1)) {
-        if offset <= hi.offset {
-            let span = f64::from(hi.offset - lo.offset);
-            let f = if span > 0.0 { f64::from(offset - lo.offset) / span } else { 1.0 };
-            return lo.color.lerp(hi.color, f);
-        }
-    }
-    last.color
-}
-
 /// Blends two stop lists over the union of their offsets.
 #[must_use]
 pub fn lerp_stops(a: &[GradientStop], b: &[GradientStop], t: f64) -> Vec<GradientStop> {
@@ -54,7 +39,7 @@ pub fn lerp_stops(a: &[GradientStop], b: &[GradientStop], t: f64) -> Vec<Gradien
             offsets.push(last);
         }
     }
-    offsets.into_iter().map(|offset| GradientStop { offset, color: color_at(a, offset).lerp(color_at(b, offset), t) }).collect()
+    offsets.into_iter().map(|offset| GradientStop { offset, color: GradientStop::color_at(a, offset).lerp(GradientStop::color_at(b, offset), t) }).collect()
 }
 
 fn lerp_gradient(a: &GradientFill, b: &GradientFill, t: f64) -> GradientFill {
