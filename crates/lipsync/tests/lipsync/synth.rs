@@ -17,127 +17,12 @@
     clippy::missing_const_for_fn
 )]
 
+use crate::common::{Rng, assert_sorted, band_noise, cat, dominant, n, silence, t, vowel, white_noise};
+
 use anim_core::Tick;
-use anim_lipsync::{LiveLipSync, Viseme, VisemeKey, analyze, viseme_at};
+use anim_lipsync::{LiveLipSync, Viseme, VisemeKey, analyze};
 
 const RATE: u32 = 16_000;
-
-struct Rng(u32);
-
-impl Rng {
-    fn next(&mut self) -> f32 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 17;
-        self.0 ^= self.0 << 5;
-        (self.0 as f32 / u32::MAX as f32) * 2.0 - 1.0
-    }
-}
-
-fn n(seconds: f32, rate: u32) -> usize {
-    (seconds * rate as f32).round() as usize
-}
-
-fn silence(seconds: f32, rate: u32) -> Vec<f32> {
-    vec![0.0; n(seconds, rate)]
-}
-
-fn scale_to_rms(mut x: Vec<f32>, rms: f32) -> Vec<f32> {
-    let cur = (x.iter().map(|v| v * v).sum::<f32>() / x.len().max(1) as f32).sqrt().max(1e-9);
-    for v in &mut x {
-        *v *= rms / cur;
-    }
-    x
-}
-
-/// Two-pole resonator in place.
-fn resonate(x: &mut [f32], rate: u32, hz: f32, bw: f32) {
-    let r = (-std::f32::consts::PI * bw / rate as f32).exp();
-    let c1 = 2.0 * r * (std::f32::consts::TAU * hz / rate as f32).cos();
-    let c2 = -r * r;
-    let (mut y1, mut y2) = (0.0, 0.0);
-    for v in x.iter_mut() {
-        let y = *v + c1 * y1 + c2 * y2;
-        y2 = y1;
-        y1 = y;
-        *v = y;
-    }
-}
-
-/// A glottal pulse train through a formant filter cascade, with a slight vibrato-free steady pitch.
-fn vowel(formants: &[f32], f0: f32, seconds: f32, rate: u32, rms: f32) -> Vec<f32> {
-    let len = n(seconds, rate);
-    let period = rate as f32 / f0;
-    let mut src = vec![0.0; len];
-    let mut next = 0.0_f32;
-    for (i, v) in src.iter_mut().enumerate() {
-        if i as f32 >= next {
-            *v = 1.0;
-            next += period;
-        }
-    }
-    // Glottal spectral tilt.
-    let mut y = 0.0;
-    for v in &mut src {
-        y = 0.5 * y + *v;
-        *v = y;
-    }
-    for &f in formants {
-        resonate(&mut src, rate, f, 70.0 + f * 0.04);
-    }
-    fade(scale_to_rms(src, rms), rate)
-}
-
-fn fade(mut x: Vec<f32>, rate: u32) -> Vec<f32> {
-    let k = n(0.01, rate).min(x.len() / 2);
-    for i in 0..k {
-        let g = i as f32 / k as f32;
-        x[i] *= g;
-        let last = x.len() - 1 - i;
-        x[last] *= g;
-    }
-    x
-}
-
-/// Noise concentrated around `centre` Hz (S: ~6.5 kHz).
-fn band_noise(centre: f32, bw: f32, seconds: f32, rate: u32, rms: f32, seed: u32) -> Vec<f32> {
-    let mut rng = Rng(seed);
-    let mut x: Vec<f32> = (0..n(seconds, rate)).map(|_| rng.next()).collect();
-    resonate(&mut x, rate, centre, bw);
-    resonate(&mut x, rate, centre, bw);
-    fade(scale_to_rms(x, rms), rate)
-}
-
-fn white_noise(seconds: f32, rate: u32, rms: f32, seed: u32) -> Vec<f32> {
-    let mut rng = Rng(seed);
-    fade(scale_to_rms((0..n(seconds, rate)).map(|_| rng.next()).collect(), rms), rate)
-}
-
-fn cat(parts: &[Vec<f32>]) -> Vec<f32> {
-    parts.concat()
-}
-
-fn t(seconds: f32) -> Tick {
-    Tick::from_seconds_f64(f64::from(seconds))
-}
-
-/// The viseme that is showing for most of `[from, to]` seconds.
-fn dominant(track: &[VisemeKey], from: f32, to: f32) -> Viseme {
-    let mut counts = std::collections::HashMap::new();
-    let steps = 100;
-    for i in 0..steps {
-        let s = from + (to - from) * (i as f32 + 0.5) / steps as f32;
-        *counts.entry(viseme_at(track, t(s))).or_insert(0_u32) += 1;
-    }
-    counts.into_iter().max_by_key(|(_, c)| *c).unwrap().0
-}
-
-fn assert_sorted(track: &[VisemeKey]) {
-    assert_eq!(track.first().map(|k| k.start), Some(Tick::ZERO));
-    for w in track.windows(2) {
-        assert!(w[0].start < w[1].start, "{track:?}");
-        assert_ne!(w[0].viseme, w[1].viseme, "{track:?}");
-    }
-}
 
 fn single_sound(sound: Vec<f32>, rate: u32) -> Vec<VisemeKey> {
     let x = cat(&[silence(0.3, rate), sound, silence(0.4, rate)]);
@@ -351,7 +236,7 @@ mod fuzz {
             chunk in 1_usize..2000,
         ) {
             let mut rng = Rng(seed);
-            let x: Vec<f32> = (0..8000).map(|i| rng.next() * 0.2 * ((i / 1000) % 2) as f32).collect();
+            let x: Vec<f32> = (0..8000).map(|i| rng.next_f32() * 0.2 * ((i / 1000) % 2) as f32).collect();
             let whole = analyze(&x, RATE);
             let mut live = LiveLipSync::new(RATE);
             let mut keys: Vec<VisemeKey> = x.chunks(chunk).flat_map(|c| live.push_keys(c)).collect();

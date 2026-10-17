@@ -264,6 +264,7 @@ name = "anim-lipsync"
 version = "0.1.0"
 dependencies = [
  "anim-core",
+ "anim-testkit",
  "criterion",
  "png",
  "proptest",

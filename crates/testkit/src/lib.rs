@@ -2,7 +2,10 @@
 //!
 //! Every visual test tree used to carry its own PNG writer, nearest-neighbour zoom, golden comparison and output
 //! folder lookup. They live here once. All pixel buffers are straight-alpha RGBA8, row-major, 4 bytes per pixel;
-//! convert from premultiplied renders with `anim_render::straight_rgba` first.
+//! convert from premultiplied renders with `anim_render::straight_rgba` first. [`synth`] makes the speech-like audio
+//! the lip sync and recording tests listen to.
+
+pub mod synth;
 
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};

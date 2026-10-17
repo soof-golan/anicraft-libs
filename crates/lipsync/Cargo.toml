@@ -20,6 +20,7 @@ name = "lipsync"
 harness = false
 
 [dev-dependencies]
+anim-testkit = { workspace = true }
 criterion = { version = "0.8", default-features = false }
 png = { workspace = true }
 proptest = { workspace = true }
