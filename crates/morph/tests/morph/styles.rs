@@ -3,7 +3,7 @@
 
 use anim_core::{Affine, Rgba8};
 use anim_display::GradientStop;
-use anim_morph::style::{lerp_affine, lerp_color, lerp_fill, lerp_stops, lerp_stroke};
+use anim_morph::style::{lerp_affine, lerp_fill, lerp_stops, lerp_stroke};
 use anim_shape::{FillStyle, GradientFill, StrokeStyle};
 
 fn stop(offset: f32, color: Rgba8) -> GradientStop {
@@ -17,9 +17,9 @@ fn gradient(stops: Vec<GradientStop>, matrix: Affine) -> GradientFill {
 #[test]
 fn colour_endpoints_are_exact() {
     let (a, b) = (Rgba8::new(1, 2, 3, 4), Rgba8::new(250, 240, 230, 220));
-    assert_eq!(lerp_color(a, b, 0.0), a);
-    assert_eq!(lerp_color(a, b, 1.0), b);
-    assert_eq!(lerp_color(a, b, 7.0).r, 255, "overshoot saturates instead of wrapping");
+    assert_eq!(a.lerp(b, 0.0), a);
+    assert_eq!(a.lerp(b, 1.0), b);
+    assert_eq!(a.lerp(b, 7.0).r, 255, "overshoot saturates instead of wrapping");
 }
 
 #[test]

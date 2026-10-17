@@ -3,24 +3,13 @@
 //! Colours, gradient matrices, gradient stops and stroke widths blend smoothly. Things that cannot blend (a linear
 //! against a radial gradient, two different bitmaps, caps and joins) switch at the halfway point.
 
-use anim_core::num::{lerp, round_f64_to_u32};
+use anim_core::num::lerp;
 use anim_core::{Affine, Rgba8};
 use anim_display::GradientStop;
 use anim_shape::{BitmapFill, FillStyle, GradientFill, SolidStroke, StrokeStyle};
 
 /// Most stops an interpolated gradient keeps.
 const MAX_STOPS: usize = 32;
-
-fn lerp_u8(a: u8, b: u8, t: f64) -> u8 {
-    let v = lerp(f64::from(a), f64::from(b), t).clamp(0.0, 255.0);
-    u8::try_from(round_f64_to_u32(v)).unwrap_or(u8::MAX)
-}
-
-/// Channel-wise blend of straight-alpha colours.
-#[must_use]
-pub fn lerp_color(a: Rgba8, b: Rgba8, t: f64) -> Rgba8 {
-    Rgba8::new(lerp_u8(a.r, b.r, t), lerp_u8(a.g, b.g, t), lerp_u8(a.b, b.b, t), lerp_u8(a.a, b.a, t))
-}
 
 /// Coefficient-wise blend of two affine maps (what Animate does for gradient and bitmap matrices).
 #[must_use]
@@ -42,7 +31,7 @@ fn color_at(stops: &[GradientStop], offset: f32) -> Rgba8 {
         if offset <= hi.offset {
             let span = f64::from(hi.offset - lo.offset);
             let f = if span > 0.0 { f64::from(offset - lo.offset) / span } else { 1.0 };
-            return lerp_color(lo.color, hi.color, f);
+            return lo.color.lerp(hi.color, f);
         }
     }
     last.color
@@ -65,7 +54,7 @@ pub fn lerp_stops(a: &[GradientStop], b: &[GradientStop], t: f64) -> Vec<Gradien
             offsets.push(last);
         }
     }
-    offsets.into_iter().map(|offset| GradientStop { offset, color: lerp_color(color_at(a, offset), color_at(b, offset), t) }).collect()
+    offsets.into_iter().map(|offset| GradientStop { offset, color: color_at(a, offset).lerp(color_at(b, offset), t) }).collect()
 }
 
 fn lerp_gradient(a: &GradientFill, b: &GradientFill, t: f64) -> GradientFill {
@@ -92,7 +81,7 @@ fn lerp_bitmap(a: &BitmapFill, b: &BitmapFill, t: f64) -> BitmapFill {
 #[must_use]
 pub fn lerp_fill(from: &FillStyle, to: &FillStyle, t: f64) -> FillStyle {
     match (from, to) {
-        (FillStyle::Solid(c0), FillStyle::Solid(c1)) => FillStyle::Solid(lerp_color(*c0, *c1, t)),
+        (FillStyle::Solid(c0), FillStyle::Solid(c1)) => FillStyle::Solid(c0.lerp(*c1, t)),
         (FillStyle::LinearGradient(g0), FillStyle::LinearGradient(g1)) => FillStyle::LinearGradient(lerp_gradient(g0, g1, t)),
         (FillStyle::RadialGradient(g0), FillStyle::RadialGradient(g1)) => FillStyle::RadialGradient(lerp_gradient(g0, g1, t)),
         (FillStyle::Solid(c0), FillStyle::LinearGradient(g1)) => FillStyle::LinearGradient(lerp_gradient(&gradient_of_solid(*c0, g1), g1, t)),

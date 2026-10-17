@@ -2,7 +2,6 @@
 
 use anim_core::{Affine, ColorTransform, Matrix3D};
 use anim_display::Filter;
-use anim_morph::style::lerp_color;
 use anim_scene::{EaseTarget, Element, Frame, InstanceFilter, SymbolInstance};
 
 use crate::ease;
@@ -130,7 +129,7 @@ fn lerp_filter(a: &Filter, b: &Filter, t: f64) -> Filter {
             Filter::DropShadow { color: ac, angle_deg: aa, distance: ad, blur_x: abx, blur_y: aby, strength: as_, inner, knockout, hide_object },
             Filter::DropShadow { color: bc, angle_deg: ba, distance: bd, blur_x: bbx, blur_y: bby, strength: bs, .. },
         ) => Filter::DropShadow {
-            color: lerp_color(*ac, *bc, t),
+            color: ac.lerp(*bc, t),
             angle_deg: lerp(*aa, *ba, t),
             distance: lerp(*ad, *bd, t),
             blur_x: lerp(*abx, *bbx, t),
@@ -144,7 +143,7 @@ fn lerp_filter(a: &Filter, b: &Filter, t: f64) -> Filter {
             Filter::Glow { color: ac, blur_x: abx, blur_y: aby, strength: as_, inner, knockout },
             Filter::Glow { color: bc, blur_x: bbx, blur_y: bby, strength: bs, .. },
         ) => Filter::Glow {
-            color: lerp_color(*ac, *bc, t),
+            color: ac.lerp(*bc, t),
             blur_x: lerp(*abx, *bbx, t),
             blur_y: lerp(*aby, *bby, t),
             strength: lerp(*as_, *bs, t),
