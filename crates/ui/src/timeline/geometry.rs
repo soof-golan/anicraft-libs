@@ -111,6 +111,20 @@ impl TimelineGeometry {
         floor_u32((x - self.grid.left() + self.scroll_x) / self.frame_width)
     }
 
+    /// The grab area of a marker's flag on `frame`: at least 12 points wide, the lower part of the ruler.
+    #[must_use]
+    pub fn marker_handle(&self, frame: u32) -> Rect {
+        let half = self.frame_width.max(12.0) * 0.5;
+        let x = self.x_center_of_frame(frame);
+        Rect::from_min_max(pos2(x - half, self.ruler.bottom() - 16.0), pos2(x + half, self.ruler.bottom())).intersect(self.ruler)
+    }
+
+    /// The id of the marker whose flag is under `p`; the one drawn last (the last in the list) wins.
+    #[must_use]
+    pub fn marker_at(&self, markers: &[super::model::Marker], p: Pos2) -> Option<u64> {
+        markers.iter().rev().find(|m| self.marker_handle(m.frame).contains(p)).map(|m| m.id)
+    }
+
     /// The visible row under screen y, if it is within `rows`.
     #[must_use]
     pub fn row_at_y(&self, y: f32) -> Option<usize> {
@@ -222,6 +236,21 @@ mod tests {
         assert_eq!(g.hit(pos2(399.0, 150.0)), Hit::Empty { frame: 19 });
         assert_eq!(g.hit(pos2(250.0, 10.0)), Hit::Ruler(5));
         assert_eq!(g.hit(pos2(100.0, 50.0)), Hit::Outside);
+    }
+
+    #[test]
+    fn marker_flags_are_found_on_the_ruler_and_follow_the_scroll() {
+        use super::super::model::Marker;
+        let mut g = geo();
+        let markers = [Marker::new(1, 5, "a"), Marker::new(2, 5, "b"), Marker::new(3, 30, "c")];
+        // Frame 5's centre is x = 255; the lower ruler is the grab area.
+        assert_eq!(g.marker_at(&markers, pos2(255.0, 15.0)), Some(2), "the later of two on one frame wins");
+        assert_eq!(g.marker_at(&markers, pos2(255.0, 2.0)), None, "the top of the ruler scrubs");
+        assert_eq!(g.marker_at(&markers, pos2(255.0, 40.0)), None, "the grid is not the ruler");
+        assert_eq!(g.marker_at(&markers, pos2(505.0, 15.0)), Some(3));
+        g.scroll_x = 100.0;
+        assert_eq!(g.marker_at(&markers, pos2(255.0, 15.0)), None);
+        assert_eq!(g.marker_at(&markers, pos2(405.0, 15.0)), Some(3));
     }
 
     #[test]

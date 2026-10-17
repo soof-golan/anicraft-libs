@@ -194,10 +194,33 @@ impl Default for OnionSkin {
     }
 }
 
+/// A named point on the ruler: a flag the user can drag to another frame, rename or delete.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Marker {
+    /// Stable identity (the app chooses it; the frame changes when the marker is dragged).
+    pub id: u64,
+    /// The 0-based frame the marker sits on.
+    pub frame: u32,
+    pub name: String,
+    /// The flag's colour.
+    pub color: Rgba8,
+}
+
+impl Marker {
+    /// A marker in the default colour.
+    #[must_use]
+    pub fn new(id: u64, frame: u32, name: impl Into<String>) -> Self {
+        Self { id, frame, name: name.into(), color: Rgba8 { r: 0xf5, g: 0xa6, b: 0x23, a: 255 } }
+    }
+}
+
 /// What the timeline shows. Layers are listed top first, as Animate stacks them.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct TimelineModel {
     pub layers: Vec<LayerRow>,
+    /// Markers drawn on the ruler, in any order.
+    #[serde(default)]
+    pub markers: Vec<Marker>,
     /// Length of the timeline in frames (the grid always shows at least this many, plus slack).
     pub frame_count: u32,
     pub current_frame: u32,
@@ -227,6 +250,18 @@ impl TimelineModel {
             }
         }
         out
+    }
+
+    /// The marker with `id`.
+    #[must_use]
+    pub fn marker(&self, id: u64) -> Option<&Marker> {
+        self.markers.iter().find(|m| m.id == id)
+    }
+
+    /// The first marker on `frame`.
+    #[must_use]
+    pub fn marker_on(&self, frame: u32) -> Option<&Marker> {
+        self.markers.iter().find(|m| m.frame == frame)
     }
 
     /// The row with `id`.
@@ -289,6 +324,19 @@ mod tests {
         let s = Span::key(4, 0);
         assert!(s.contains(4));
         assert_eq!(s.end(), 5);
+    }
+
+    #[test]
+    fn markers_are_found_by_id_and_frame_and_old_models_load_without_them() {
+        let m = TimelineModel { markers: vec![Marker::new(7, 12, "Chorus"), Marker::new(9, 40, "End")], ..Default::default() };
+        assert_eq!(m.marker(9).map(|x| x.frame), Some(40));
+        assert_eq!(m.marker_on(12).map(|x| x.name.as_str()), Some("Chorus"));
+        assert!(m.marker(1).is_none() && m.marker_on(13).is_none());
+        let old: TimelineModel = serde_json::from_str(
+            r#"{"layers":[],"frame_count":3,"current_frame":0,"fps":24.0,"onion":{"enabled":false,"outlines":false,"before":1,"after":1},"playing":false}"#,
+        )
+        .unwrap();
+        assert_eq!(old.markers.len(), 0);
     }
 
     #[test]

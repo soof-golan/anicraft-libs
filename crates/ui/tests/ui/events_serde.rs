@@ -30,6 +30,10 @@ fn timeline_events_round_trip() {
         TimelineEvent::Scroll { x: 10.0, y: 0.0 },
         TimelineEvent::Zoom { frame_width: 24.0, scroll_x: 5.5 },
         TimelineEvent::SetOnionRange { before: 3, after: 1 },
+        TimelineEvent::MarkerAdd { frame: 4 },
+        TimelineEvent::MarkerMoved { id: 9, frame: 12 },
+        TimelineEvent::MarkerRename { id: 9 },
+        TimelineEvent::MarkerRemove { id: 9 },
         TimelineEvent::ToggleOnion,
         TimelineEvent::ToggleEditMultiple,
         TimelineEvent::SetFrameView {

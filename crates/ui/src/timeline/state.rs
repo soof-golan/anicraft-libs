@@ -266,6 +266,23 @@ pub enum TimelineEvent {
         frame_width: f32,
         scroll_x: f32,
     },
+    /// "Add Marker" in the ruler's context menu, for the frame that was right-clicked.
+    MarkerAdd {
+        frame: u32,
+    },
+    /// A marker's flag was dragged to this frame (reported each time the frame changes while dragging).
+    MarkerMoved {
+        id: u64,
+        frame: u32,
+    },
+    /// "Rename" in a marker's context menu: the app shows its own editor.
+    MarkerRename {
+        id: u64,
+    },
+    /// "Delete" in a marker's context menu.
+    MarkerRemove {
+        id: u64,
+    },
     /// The onion skin markers were dragged.
     SetOnionRange {
         before: u32,

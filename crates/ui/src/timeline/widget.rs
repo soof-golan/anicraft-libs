@@ -5,7 +5,7 @@ use egui::{Align2, Color32, FontId, Id, Painter, Rect, Sense, Shape, Stroke, Str
 use super::{
     geometry::{FrameSelection, Hit, TimelineGeometry, layers_between},
     layers::{draw_header, draw_rows},
-    model::{LabelKind, LayerRow, Span, TimelineModel, TweenKind},
+    model::{LabelKind, LayerRow, Marker, Span, TimelineModel, TweenKind},
     state::{FrameAction, FrameSize, LayerEvent, PreviewMode, TimelineEvent, TimelineViewState},
 };
 use crate::{
@@ -159,6 +159,7 @@ pub fn timeline(ui: &mut Ui, model: &TimelineModel, view: &TimelineViewState) ->
     paint_grid(&grid_painter, model, view, &layout, &visible, &p);
     events.extend(grid_interaction(ui, model, view, &layout, &visible_ids, id, &p));
     paint_ruler(ui, model, view, &layout, &p);
+    paint_markers(ui, model, &layout, &p);
     events.extend(ruler_interaction(ui, model, view, &layout, id));
     paint_playhead(ui, model, &layout, &p);
     events.extend(scrollbars(ui, view, &layout, id));
@@ -434,6 +435,34 @@ fn paint_ruler(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, layout:
     }
 }
 
+/// The marker flags on the ruler: a pennant on the frame with the name beside it (cut off at the next flag).
+fn paint_markers(ui: &Ui, model: &TimelineModel, layout: &Layout, p: &Palette) {
+    let geo = &layout.geo;
+    if model.markers.is_empty() {
+        return;
+    }
+    let painter = ui.painter_at(geo.ruler);
+    let (f0, f1) = geo.visible_frames();
+    let mut sorted: Vec<&Marker> = model.markers.iter().collect();
+    sorted.sort_by_key(|m| m.frame);
+    let font = FontId::proportional(10.0);
+    for (i, m) in sorted.iter().enumerate() {
+        if m.frame < f0.saturating_sub(40) || m.frame > f1 {
+            continue;
+        }
+        let x = geo.x_center_of_frame(m.frame);
+        let color = Color32::from_rgba_unmultiplied(m.color.r, m.color.g, m.color.b, m.color.a);
+        let bottom = geo.ruler.bottom();
+        painter.vline(x, (bottom - 14.0)..=bottom, Stroke::new(1.0, color));
+        painter.add(Shape::convex_polygon(vec![pos2(x, bottom - 14.0), pos2(x + 9.0, bottom - 10.5), pos2(x, bottom - 7.0)], color, Stroke::NONE));
+        let next_x = sorted.get(i.saturating_add(1)).map_or(f32::INFINITY, |n| geo.x_center_of_frame(n.frame));
+        let room = Rect::from_min_max(pos2(x + 11.0, geo.ruler.top()), pos2(next_x.min(geo.ruler.right()) - 2.0, bottom));
+        if room.width() > 12.0 && !m.name.is_empty() {
+            painter.with_clip_rect(room).text(pos2(room.left(), bottom - 11.0), Align2::LEFT_CENTER, visual(&m.name), font.clone(), p.text);
+        }
+    }
+}
+
 fn paint_playhead(ui: &Ui, model: &TimelineModel, layout: &Layout, p: &Palette) {
     let geo = &layout.geo;
     let region = Rect::from_min_max(geo.ruler.min, geo.grid.max);
@@ -577,6 +606,26 @@ fn frame_menu(ui: &mut Ui, has_selection: bool, events: &mut Vec<TimelineEvent>)
     }
 }
 
+/// The context menu of a marker: go to it, rename it, delete it.
+fn marker_menu(ui: &mut Ui, model: &TimelineModel, id: u64, events: &mut Vec<TimelineEvent>) {
+    let Some(marker) = model.marker(id) else {
+        ui.close();
+        return;
+    };
+    if ui.button("Go to Marker").clicked() {
+        events.push(TimelineEvent::SetFrame(marker.frame));
+        ui.close();
+    }
+    if ui.button("Rename Marker\u{2026}").clicked() {
+        events.push(TimelineEvent::MarkerRename { id });
+        ui.close();
+    }
+    if ui.button("Delete Marker").clicked() {
+        events.push(TimelineEvent::MarkerRemove { id });
+        ui.close();
+    }
+}
+
 fn ruler_interaction(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, layout: &Layout, id: Id) -> Vec<TimelineEvent> {
     let geo = &layout.geo;
     let mut events = Vec::new();
@@ -611,7 +660,46 @@ fn ruler_interaction(ui: &Ui, model: &TimelineModel, view: &TimelineViewState, l
         }
     }
     let response = ui.interact(geo.ruler, id.with("ruler"), Sense::click_and_drag());
+    // Marker flags are registered after the ruler so they sit on top of it: dragging one moves it, and the scrub
+    // below ignores that drag.
+    let mut marker_drag = false;
+    for m in &model.markers {
+        let r = ui.interact(geo.marker_handle(m.frame), id.with(("marker", m.id)), Sense::click_and_drag());
+        if r.hovered() || r.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+        }
+        if r.dragged() || r.drag_started() || r.clicked() {
+            marker_drag = true;
+        }
+        if r.clicked() {
+            events.push(TimelineEvent::SetFrame(m.frame));
+        }
+        r.context_menu(|ui| marker_menu(ui, model, m.id, &mut events));
+        if r.dragged()
+            && let Some(p) = r.interact_pointer_pos()
+        {
+            let f = geo.frame_at_x(p.x).min(max_frame);
+            if f != m.frame {
+                events.push(TimelineEvent::MarkerMoved { id: m.id, frame: f });
+            }
+        }
+    }
+    // A right-click on the bare ruler remembers its frame; the menu adds a marker there.
+    let frame_id = id.with("ruler-menu-frame");
+    if response.secondary_clicked()
+        && let Some(p) = response.interact_pointer_pos()
+    {
+        ui.data_mut(|d| d.insert_temp(frame_id, geo.frame_at_x(p.x).min(max_frame)));
+    }
+    response.context_menu(|ui| {
+        let frame = ui.data(|d| d.get_temp::<u32>(frame_id)).unwrap_or(model.current_frame);
+        if ui.button("Add Marker").clicked() {
+            events.push(TimelineEvent::MarkerAdd { frame });
+            ui.close();
+        }
+    });
     if !onion_drag
+        && !marker_drag
         && (response.dragged() || response.clicked() || response.drag_started())
         && let Some(p) = response.interact_pointer_pos()
     {

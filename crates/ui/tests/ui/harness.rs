@@ -64,14 +64,77 @@ fn timeline_harness() -> Harness<'static, TimelineRig> {
             let events = anim_ui::timeline(ui, &rig.model, &rig.view);
             for e in &events {
                 rig.view.apply(e);
-                if let TimelineEvent::SetFrame(f) = e {
-                    rig.model.current_frame = *f;
+                match e {
+                    TimelineEvent::SetFrame(f) => rig.model.current_frame = *f,
+                    TimelineEvent::MarkerMoved { id, frame } => {
+                        if let Some(m) = rig.model.markers.iter_mut().find(|m| m.id == *id) {
+                            m.frame = *frame;
+                        }
+                    }
+                    TimelineEvent::MarkerRemove { id } => rig.model.markers.retain(|m| m.id != *id),
+                    _ => {}
                 }
             }
             rig.events.extend(events);
         },
         rig,
     )
+}
+
+fn right_click(h: &mut Harness<'_, impl Sized>, at: Pos2) {
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false] {
+        h.input_mut().events.push(Event::PointerButton { pos: at, button: PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.step();
+}
+
+/// Where frame `f`'s flag is on the ruler (the layer column is 230 points wide, cells 12).
+fn flag(origin: Pos2, f: f32) -> Pos2 {
+    pos2(origin.x + 230.0 + 12.0 * f + 6.0, origin.y + 17.0)
+}
+
+#[test]
+fn timeline_markers_are_drawn_dragged_and_do_not_scrub() {
+    let mut h = timeline_harness();
+    h.state_mut().model.markers = vec![anim_ui::Marker::new(1, 6, "Verse"), anim_ui::Marker::new(2, 20, "Chorus")];
+    h.run();
+    let origin = h.state().origin;
+    drag_to(&mut h, flag(origin, 6.0), flag(origin, 11.0));
+    let events = h.state().events.clone();
+    assert!(events.contains(&TimelineEvent::MarkerMoved { id: 1, frame: 11 }), "{events:?}");
+    assert!(!events.iter().any(|e| matches!(e, TimelineEvent::SetFrame(_))), "dragging a flag must not scrub: {events:?}");
+    assert_eq!(h.state().model.markers.iter().find(|m| m.id == 1).map(|m| m.frame), Some(11));
+    assert_eq!(h.state().model.markers.iter().find(|m| m.id == 2).map(|m| m.frame), Some(20), "the other flag stays");
+    // Dragged past the end it stops at the last frame; before the start at frame 0.
+    drag_to(&mut h, flag(origin, 11.0), pos2(origin.x + 230.0 + 12.0 * 100.0, origin.y + 17.0));
+    assert!(h.state().model.markers.iter().find(|m| m.id == 1).is_some_and(|m| m.frame <= 29), "{:?}", h.state().model.markers);
+}
+
+#[test]
+fn timeline_right_clicking_the_ruler_adds_a_marker_and_right_clicking_a_flag_offers_rename_and_delete() {
+    let mut h = timeline_harness();
+    h.state_mut().model.markers = vec![anim_ui::Marker::new(1, 6, "Verse")];
+    h.run();
+    let origin = h.state().origin;
+    right_click(&mut h, pos2(origin.x + 230.0 + 12.0 * 14.0 + 6.0, origin.y + 6.0));
+    h.get_by_label("Add Marker").click();
+    h.run();
+    assert!(h.state().events.contains(&TimelineEvent::MarkerAdd { frame: 14 }), "{:?}", h.state().events);
+
+    right_click(&mut h, flag(origin, 6.0));
+    assert!(h.query_by_label("Add Marker").is_none(), "a flag has its own menu");
+    h.get_by_label("Rename Marker\u{2026}").click();
+    h.run();
+    assert!(h.state().events.contains(&TimelineEvent::MarkerRename { id: 1 }), "{:?}", h.state().events);
+
+    right_click(&mut h, flag(origin, 6.0));
+    h.get_by_label("Delete Marker").click();
+    h.run();
+    assert!(h.state().events.contains(&TimelineEvent::MarkerRemove { id: 1 }));
+    assert_eq!(h.state().model.markers.len(), 0);
 }
 
 #[test]

@@ -101,6 +101,7 @@ fn timeline_model() -> TimelineModel {
     actions.spans = vec![s, label];
     TimelineModel {
         layers: vec![folder, hero, mouth, bg, rtl, sound, actions],
+        markers: vec![anim_ui::Marker::new(1, 4, "Intro"), anim_ui::Marker::new(2, 30, "Chorus")],
         frame_count: 50,
         current_frame: 17,
         fps: 24.0,

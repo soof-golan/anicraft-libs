@@ -42,6 +42,6 @@ pub use library::{LibraryAction, LibraryEvent, LibraryItemView, LibraryKind, Lib
 pub use property::{PropValue, Property, PropertyEdit, property_grid};
 pub use stage::{Guide, Overlay, StageEvent, StageView, StageViewState, stage_view};
 pub use theme::{Palette, Theme};
-pub use timeline::{LayerEvent, LayerRow, Span, TimelineEvent, TimelineModel, TimelineViewState, layers_list, timeline};
+pub use timeline::{LayerEvent, LayerRow, Marker, Span, TimelineEvent, TimelineModel, TimelineViewState, layers_list, timeline};
 pub use toolbar::{ToolItem, ToolbarEvent, toolbar};
 pub use transport::{TransportEvent, TransportState, transport_bar};
