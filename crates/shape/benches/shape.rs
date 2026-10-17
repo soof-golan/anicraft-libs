@@ -91,13 +91,9 @@ fn xml_entries(path: &Path) -> Vec<String> {
 
 /// Every `<DOMShape>` of the sample FLAs as its `<Edge>` attributes.
 fn sample_shapes() -> Vec<Vec<XflEdge>> {
-    let Some(dir) = std::env::var_os("ANICRAFT_SAMPLES") else { return Vec::new() };
     let mut shapes = Vec::new();
     for name in ["unicorn_4AE.fla", "derwood_green_choreo_short.fla"] {
-        let path = Path::new(&dir).join(name);
-        if !path.exists() {
-            continue;
-        }
+        let Some(path) = anim_testkit::sample(name) else { continue };
         for xml in xml_entries(&path) {
             let Ok(doc) = roxmltree::Document::parse_with_options(&xml, roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() }) else { continue };
             for shape in doc.descendants().filter(|n| n.has_tag_name("DOMShape")) {

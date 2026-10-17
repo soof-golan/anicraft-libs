@@ -251,13 +251,9 @@ fn segment_count(shape: &EdgeShape) -> usize {
 
 #[test]
 fn render_sample_contact_sheets() {
-    let (Some(samples), Some(out)) = (std::env::var_os("ANICRAFT_SAMPLES"), std::env::var_os("ANIM_SHAPE_PREVIEW")) else { return };
+    let (Some(fla), Some(out)) = (anim_testkit::sample("unicorn_4AE.fla"), std::env::var_os("ANIM_SHAPE_PREVIEW")) else { return };
     let out = PathBuf::from(out);
     std::fs::create_dir_all(&out).expect("output folder");
-    let fla = PathBuf::from(samples).join("unicorn_4AE.fla");
-    if !fla.exists() {
-        return;
-    }
     let mut all: Vec<EdgeShape> = Vec::new();
     for (name, xml) in local_entries(&fla) {
         for (n, shape) in shapes(&xml).into_iter().enumerate().filter(|(_, s)| !s.is_empty()) {

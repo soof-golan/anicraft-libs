@@ -20,7 +20,6 @@
 use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::hint::black_box;
-use std::path::PathBuf;
 
 use anim_artwork::{ArtKind, ArtMask, ArtNode, ArtworkTree, Limits, import, import_ai, import_psd, to_display};
 use anim_display::ImageStore;
@@ -157,8 +156,7 @@ fn checksum(name: &str, tree: &ArtworkTree) {
 }
 
 fn sample(rel: &str) -> Option<Vec<u8>> {
-    let root = std::env::var_os("ANICRAFT_SAMPLES")?;
-    std::fs::read(PathBuf::from(root).join(rel)).ok()
+    std::fs::read(anim_testkit::sample(rel)?).ok()
 }
 
 fn benches(c: &mut Criterion) {

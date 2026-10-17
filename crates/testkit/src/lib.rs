@@ -49,6 +49,21 @@ pub fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     at.and_then(|at| rgba.get(at..at.checked_add(4)?)).and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()).unwrap_or([0; 4])
 }
 
+/// The folder `$ANICRAFT_SAMPLES` names, or `None` when the variable is unset or the folder is missing.
+///
+/// The Adobe-authored samples are never committed, so every test or benchmark that reads them returns early on `None`.
+#[must_use]
+pub fn samples_dir() -> Option<PathBuf> {
+    std::env::var_os("ANICRAFT_SAMPLES").map(PathBuf::from).filter(|dir| dir.is_dir())
+}
+
+/// `<samples folder>/<relative>`, or `None` when there is no samples folder or the file is not in it.
+#[must_use]
+pub fn sample(relative: impl AsRef<Path>) -> Option<PathBuf> {
+    let path = samples_dir()?.join(relative);
+    path.exists().then_some(path)
+}
+
 /// `$ANICRAFT_VISUAL_OUT/<component>` (created), or `None` when the variable is unset (CI): then nothing is written.
 #[must_use]
 pub fn out_dir(component: &str) -> Option<PathBuf> {
@@ -244,6 +259,15 @@ mod tests {
         assert!(check_golden(&path, 2, 2, &near, 4).is_err());
         assert!(check_golden(&path, 1, 4, &checker(), 0).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sample_lookup_needs_the_folder_and_the_file() {
+        // The variable is process-wide and tests run in parallel threads, so only the unset-safe parts are asserted.
+        assert_eq!(sample("no-such-sample-file.fla"), None);
+        if let Some(dir) = samples_dir() {
+            assert!(dir.is_dir());
+        }
     }
 
     #[test]

@@ -20,10 +20,6 @@ use anim_core::kurbo::PathEl;
 use anim_shape::codec::{parse_cubics, parse_edges, quantize_segment};
 use anim_shape::{EdgeShape, FillStyle, NoImages, Segment, StrokeStyle, XflEdge, encode_edges};
 
-fn samples_dir() -> Option<PathBuf> {
-    std::env::var_os("ANICRAFT_SAMPLES").map(PathBuf::from)
-}
-
 /// The XML entries of a zip. Large media entries are skipped.
 fn xml_entries(path: &std::path::Path) -> Vec<(String, String)> {
     anim_testkit::archive_texts(path, |name| {
@@ -120,8 +116,7 @@ fn dummy_styles(edges: &[XflEdge]) -> (Vec<FillStyle>, Vec<StrokeStyle>) {
 }
 
 fn sample_files() -> Vec<(String, PathBuf)> {
-    let Some(dir) = samples_dir() else { return Vec::new() };
-    ["unicorn_4AE.fla", "derwood_green_choreo_short.fla"].into_iter().map(|n| (n.to_owned(), dir.join(n))).filter(|(_, p)| p.exists()).collect()
+    ["unicorn_4AE.fla", "derwood_green_choreo_short.fla"].into_iter().filter_map(|n| Some((n.to_owned(), anim_testkit::sample(n)?))).collect()
 }
 
 #[test]
@@ -151,7 +146,7 @@ fn every_sample_edge_and_cubic_parses_and_round_trips() {
         }
     }
     eprintln!("parsed {edge_total} edges attributes and {cubic_total} cubic curves");
-    if samples_dir().is_some() {
+    if anim_testkit::samples_dir().is_some() {
         assert!(edge_total > 200 && cubic_total > 1000, "the unicorn sample has hundreds of edges and over a thousand cubics");
     }
 }

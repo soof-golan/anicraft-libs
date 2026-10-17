@@ -4,17 +4,12 @@
 
 #![allow(clippy::arithmetic_side_effects, clippy::indexing_slicing, clippy::unwrap_used, clippy::expect_used, clippy::panic, reason = "test code")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anim_artwork::{ArtworkTree, Limits, import_path, to_display};
 use anim_display::ImageStore;
 use anim_render::{Background, RenderOptions, render};
-
-fn sample(rel: &str) -> Option<PathBuf> {
-    let root = std::env::var_os("ANICRAFT_SAMPLES")?;
-    let path = PathBuf::from(root).join(rel);
-    path.exists().then_some(path)
-}
+use anim_testkit::sample;
 
 fn load(rel: &str) -> Option<ArtworkTree> {
     let path = sample(rel)?;
