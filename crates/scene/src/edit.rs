@@ -5,14 +5,14 @@
 
 use std::collections::HashMap;
 
-use anim_core::{Affine, Point, Rgba8, Vec2};
+use anim_core::{Affine, Point, Rect, Rgba8, Vec2};
 use anim_shape::{FillStyle, StrokeStyle};
 
 use crate::bounds::elements_bounds;
 use crate::document::{Document, LAYER_COLORS, TimelineId};
 use crate::element::{Element, LoopMode, SymbolInstance, SymbolKind};
 use crate::error::SceneError;
-use crate::library::{FolderItem, Library, LibraryItem, Symbol, validate_item_name};
+use crate::library::{FolderItem, Library, LibraryItem, Linkage, Symbol, validate_item_name};
 use crate::timeline::{Frame, KEY_MODE_CLASSIC_TWEEN, KEY_MODE_SHAPE_TWEEN, LabelType, Layer, LayerKind, Timeline, TweenType};
 
 /// Most frames a timeline may grow to through the editing helpers (Animate's own cap is 16 000).
@@ -20,7 +20,8 @@ pub const MAX_FRAMES: u32 = 100_000;
 /// Most layers a timeline may hold through the editing helpers.
 pub const MAX_LAYERS: usize = 10_000;
 
-/// Where the registration point of a new symbol goes.
+/// Where the registration point of a new symbol goes: the stage origin, or one of the nine points of the grid in the
+/// Convert to Symbol dialog, taken on the bounds of the selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Registration {
     /// The stage origin: children keep their coordinates.
@@ -30,6 +31,87 @@ pub enum Registration {
     Center,
     /// The top-left corner of the selection's bounds.
     TopLeft,
+    TopCenter,
+    TopRight,
+    MiddleLeft,
+    MiddleRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+}
+
+impl Registration {
+    /// The nine grid points in reading order (the dialog's 3 by 3 grid).
+    pub const GRID: [Self; 9] = [
+        Self::TopLeft,
+        Self::TopCenter,
+        Self::TopRight,
+        Self::MiddleLeft,
+        Self::Center,
+        Self::MiddleRight,
+        Self::BottomLeft,
+        Self::BottomCenter,
+        Self::BottomRight,
+    ];
+
+    /// Lowercase name for commands: `origin`, `top_left`, `top_center`, ..., `center`, ..., `bottom_right`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Origin => "origin",
+            Self::Center => "center",
+            Self::TopLeft => "top_left",
+            Self::TopCenter => "top_center",
+            Self::TopRight => "top_right",
+            Self::MiddleLeft => "middle_left",
+            Self::MiddleRight => "middle_right",
+            Self::BottomLeft => "bottom_left",
+            Self::BottomCenter => "bottom_center",
+            Self::BottomRight => "bottom_right",
+        }
+    }
+
+    /// Parses [`Registration::name`].
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::GRID.into_iter().chain([Self::Origin]).find(|r| r.name() == name)
+    }
+
+    /// The label a person reads: `Top left`, `Center`, ...
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Origin => "Stage origin",
+            Self::Center => "Center",
+            Self::TopLeft => "Top left",
+            Self::TopCenter => "Top center",
+            Self::TopRight => "Top right",
+            Self::MiddleLeft => "Middle left",
+            Self::MiddleRight => "Middle right",
+            Self::BottomLeft => "Bottom left",
+            Self::BottomCenter => "Bottom center",
+            Self::BottomRight => "Bottom right",
+        }
+    }
+
+    /// The point of `bounds` this setting names; `None` for [`Registration::Origin`], which is not on the bounds.
+    #[must_use]
+    pub const fn point(self, bounds: Rect) -> Option<Point> {
+        let centre = bounds.center();
+        let (x, y) = match self {
+            Self::Origin => return None,
+            Self::TopLeft => (bounds.x0, bounds.y0),
+            Self::TopCenter => (centre.x, bounds.y0),
+            Self::TopRight => (bounds.x1, bounds.y0),
+            Self::MiddleLeft => (bounds.x0, centre.y),
+            Self::Center => (centre.x, centre.y),
+            Self::MiddleRight => (bounds.x1, centre.y),
+            Self::BottomLeft => (bounds.x0, bounds.y1),
+            Self::BottomCenter => (centre.x, bounds.y1),
+            Self::BottomRight => (bounds.x1, bounds.y1),
+        };
+        Some(Point::new(x, y))
+    }
 }
 
 fn timeline_mut<'a>(doc: &'a mut Document, id: &TimelineId) -> Result<&'a mut Timeline, SceneError> {
@@ -389,10 +471,30 @@ fn checked_selection(indices: &[usize], count: usize) -> Result<Vec<usize>, Scen
 /// What [`convert_to_symbol`] makes.
 #[derive(Debug, Clone, Copy)]
 pub struct SymbolSpec<'a> {
-    /// Library path of the new symbol.
+    /// Name of the new symbol; with a `folder` it is the name inside that folder.
     pub name: &'a str,
     pub kind: SymbolKind,
     pub registration: Registration,
+    /// Library folder (`a/b`) to put the symbol in; created when missing. `None` or empty is the library root.
+    pub folder: Option<&'a str>,
+    /// Linkage to set (Export for `ActionScript`, class, base class); `None` leaves the symbol unexported.
+    pub linkage: Option<&'a Linkage>,
+    /// Enable 9-slice scaling, with guides in the middle third of the symbol.
+    pub scale9: bool,
+}
+
+impl<'a> SymbolSpec<'a> {
+    /// A symbol in the library root, not exported and without 9-slice guides.
+    #[must_use]
+    pub const fn new(name: &'a str, kind: SymbolKind, registration: Registration) -> Self {
+        Self { name, kind, registration, folder: None, linkage: None, scale9: false }
+    }
+
+    /// The full library path the symbol gets.
+    #[must_use]
+    pub fn full_name(&self) -> String {
+        self.folder.map(|f| f.trim_matches('/')).filter(|f| !f.is_empty()).map_or_else(|| self.name.to_owned(), |folder| format!("{folder}/{}", self.name))
+    }
 }
 
 /// Convert to Symbol (F8): moves the selected elements of the keyframe covering `frame` into a new library symbol.
@@ -404,24 +506,30 @@ pub struct SymbolSpec<'a> {
 /// Name errors ([`SceneError::InvalidName`], [`SceneError::NameTaken`]), selection errors, unknown timeline, layer or
 /// keyframe.
 pub fn convert_to_symbol(doc: &mut Document, id: &TimelineId, layer: usize, frame: u32, indices: &[usize], spec: &SymbolSpec<'_>) -> Result<usize, SceneError> {
-    let SymbolSpec { name, kind, registration } = *spec;
+    let (kind, registration) = (spec.kind, spec.registration);
+    let full = spec.full_name();
+    let name = full.as_str();
+    validate_item_name(spec.name)?;
     validate_item_name(name)?;
     if doc.library.find_index(name).is_some() {
         return Err(SceneError::NameTaken(name.to_owned()));
     }
-    let (sorted, offset) = {
+    if spec.scale9 && kind == SymbolKind::Graphic {
+        return Err(SceneError::InvalidRange("graphic symbols cannot use 9-slice scaling; make it a movie clip or a button"));
+    }
+    if let Some(linkage) = spec.linkage {
+        crate::symbols::validate_linkage(kind, linkage)?;
+    }
+    let (sorted, offset, bounds) = {
         let tl = doc.timeline(id).ok_or_else(|| SceneError::NoSuchTimeline(id.clone()))?;
         let count = tl.layers.len();
         let l = tl.layers.get(layer).ok_or(SceneError::NoSuchLayer { layer, count })?;
         let k = l.keyframe_at(frame).ok_or(SceneError::NoFrame { layer, frame })?;
         let sorted = checked_selection(indices, k.elements.len())?;
         let selected = sorted.iter().filter_map(|&i| k.elements.get(i));
-        let offset = match (registration, elements_bounds(selected, &doc.library)) {
-            (Registration::Origin, _) | (_, None) => Vec2::ZERO,
-            (Registration::Center, Some(r)) => r.center().to_vec2(),
-            (Registration::TopLeft, Some(r)) => Vec2::new(r.x0, r.y0),
-        };
-        (sorted, offset)
+        let bounds = elements_bounds(selected, &doc.library);
+        let offset = bounds.and_then(|r| registration.point(r)).map_or(Vec2::ZERO, Point::to_vec2);
+        (sorted, offset, bounds)
     };
     let mut children = remove_elements(doc, id, layer, frame, &sorted)?;
     let shift = Affine::translate(-offset);
@@ -437,6 +545,11 @@ pub fn convert_to_symbol(doc: &mut Document, id: &TimelineId, layer: usize, fram
     sym_layer.autoname = true;
     sym_layer.frames.push(Frame::new(0, 1, children));
     symbol.timeline.layers.push(sym_layer);
+    symbol.linkage = spec.linkage.cloned();
+    if spec.scale9 {
+        let own = bounds.map(|b| Rect::new(b.x0 - offset.x, b.y0 - offset.y, b.x1 - offset.x, b.y1 - offset.y));
+        symbol.scale9_grid = own.filter(|b| b.width() > 0.0 && b.height() > 0.0).map(crate::symbols::default_scale9_grid);
+    }
     doc.library.items.push(LibraryItem::Symbol(Box::new(symbol)));
 
     let mut inst = SymbolInstance::new(name, Affine::translate(offset));

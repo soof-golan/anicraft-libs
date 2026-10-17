@@ -65,7 +65,7 @@ fn apply(doc: &mut Document, op: &Op, counter: &mut u32) {
         Op::Convert(l, f) => {
             *counter += 1;
             let name = format!("conv{counter}");
-            drop(edit::convert_to_symbol(doc, &id, l, f, &[0], &SymbolSpec { name: &name, kind: SymbolKind::Graphic, registration: Registration::Center }));
+            drop(edit::convert_to_symbol(doc, &id, l, f, &[0], &SymbolSpec::new(&name, SymbolKind::Graphic, Registration::Center)));
         }
     }
 }

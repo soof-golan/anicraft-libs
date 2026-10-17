@@ -37,9 +37,11 @@ pub mod extra;
 pub mod hints;
 pub mod library;
 pub mod media;
+pub mod media_props;
 pub mod motion;
 pub mod primitive;
 pub mod query;
+pub mod symbols;
 pub mod timeline;
 pub mod validate;
 
@@ -55,8 +57,10 @@ pub use error::SceneError;
 pub use extra::{Extra, RawXml};
 pub use library::{BitmapCompression, BitmapItem, FolderItem, FontItem, Library, LibraryItem, Linkage, SoundItem, Symbol, VideoItem};
 pub use media::{MediaId, MediaStore};
+pub use media_props::{BitmapProps, SoundCodec, SoundExport, SoundQuality, SourceInfo};
 pub use primitive::{OvalPrimitive, Primitive, PrimitiveKind, RectPrimitive};
 pub use query::{DocumentStats, LayerNode, RefKind, Reference, shape_bitmap_paths};
+pub use symbols::{BUTTON_FRAMES, ButtonState};
 pub use timeline::{
     EaseCurve, EaseTarget, EnvelopePoint, Frame, FrameSound, KEY_MODE_CLASSIC_TWEEN, KEY_MODE_NORMAL, KEY_MODE_SHAPE_TWEEN, LabelType, Layer, LayerKind,
     ShapeHint, SoundLoop, SoundSync, Timeline, TweenEase, TweenRotate, TweenType,

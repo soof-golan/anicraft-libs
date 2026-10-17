@@ -30,7 +30,7 @@ fn square(x: f64, y: f64, s: f64) -> Element {
 }
 
 fn spec(name: &str, kind: SymbolKind, registration: Registration) -> SymbolSpec<'_> {
-    SymbolSpec { name, kind, registration }
+    SymbolSpec::new(name, kind, registration)
 }
 
 fn spans(d: &Document, layer: usize) -> Vec<(u32, u32)> {
@@ -522,4 +522,62 @@ fn ease_lookup_falls_back_to_all() {
     f.eases.push(TweenEase { target: EaseTarget::Rotation, curve: EaseCurve::Custom(vec![[0.0, 0.0], [1.0, 1.0]]) });
     assert!(matches!(f.ease_for(EaseTarget::Rotation), Some(EaseCurve::Custom(_))));
     assert!(matches!(f.ease_for(EaseTarget::Position), Some(EaseCurve::Named(n)) if n == "cubicIn"));
+}
+
+#[test]
+fn registration_grid_names_and_points() {
+    let b = Rect::new(10.0, 20.0, 50.0, 100.0);
+    assert_eq!(Registration::Origin.point(b), None);
+    assert_eq!(Registration::TopLeft.point(b), Some(Point::new(10.0, 20.0)));
+    assert_eq!(Registration::Center.point(b), Some(Point::new(30.0, 60.0)));
+    assert_eq!(Registration::BottomRight.point(b), Some(Point::new(50.0, 100.0)));
+    assert_eq!(Registration::TopCenter.point(b), Some(Point::new(30.0, 20.0)));
+    assert_eq!(Registration::MiddleLeft.point(b), Some(Point::new(10.0, 60.0)));
+    assert_eq!(Registration::GRID.len(), 9);
+    for r in Registration::GRID.into_iter().chain([Registration::Origin]) {
+        assert_eq!(Registration::from_name(r.name()), Some(r));
+        assert!(!r.label().is_empty());
+    }
+    assert_eq!(Registration::from_name("nowhere"), None);
+}
+
+#[test]
+fn convert_to_symbol_takes_a_folder_linkage_and_nine_slice_guides() {
+    let mut d = doc();
+    add_element(&mut d, &scene(), 0, 0, square(100.0, 50.0, 90.0)).unwrap();
+    let linkage = crate::symbols::default_linkage("panel", SymbolKind::MovieClip);
+    let mut s = SymbolSpec::new("panel", SymbolKind::MovieClip, Registration::BottomRight);
+    s.folder = Some("ui/skins");
+    s.linkage = Some(&linkage);
+    s.scale9 = true;
+    assert_eq!(s.full_name(), "ui/skins/panel");
+    convert_to_symbol(&mut d, &scene(), 0, 0, &[0], &s).unwrap();
+    let sym = d.library.find_symbol("ui/skins/panel").unwrap();
+    assert_eq!(sym.linkage.as_ref().and_then(|l| l.class_name.as_deref()), Some("panel"));
+    // The registration point is the bottom right corner (190, 140), so the square sits at (-90, -90)..(0, 0).
+    assert_eq!(crate::bounds::timeline_bounds(&sym.timeline, 0, &d.library), Some(Rect::new(-90.0, -90.0, 0.0, 0.0)));
+    assert_eq!(sym.scale9_grid, Some(Rect::new(-60.0, -60.0, -30.0, -30.0)), "the middle third of the bounds, in the symbol's pixels");
+    assert!(d.library.find("ui").is_some() && d.library.find("ui/skins").is_some(), "the folders were made");
+    let Element::SymbolInstance(i) = &d.scenes[0].layers[0].frames[0].elements[0] else { panic!() };
+    assert_eq!(i.matrix, Affine::translate((190.0, 140.0)));
+}
+
+#[test]
+fn convert_to_symbol_refuses_what_a_graphic_cannot_do_and_changes_nothing() {
+    let mut d = doc();
+    add_element(&mut d, &scene(), 0, 0, square(0.0, 0.0, 10.0)).unwrap();
+    let mut nine = SymbolSpec::new("g", SymbolKind::Graphic, Registration::Center);
+    nine.scale9 = true;
+    assert!(convert_to_symbol(&mut d, &scene(), 0, 0, &[0], &nine).is_err());
+    let exported = crate::symbols::default_linkage("g", SymbolKind::MovieClip);
+    let mut export = SymbolSpec::new("g", SymbolKind::Graphic, Registration::Center);
+    export.linkage = Some(&exported);
+    assert!(convert_to_symbol(&mut d, &scene(), 0, 0, &[0], &export).is_err());
+    let mut no_class = crate::symbols::default_linkage("g", SymbolKind::MovieClip);
+    no_class.class_name = None;
+    let mut bad = SymbolSpec::new("g", SymbolKind::MovieClip, Registration::Center);
+    bad.linkage = Some(&no_class);
+    assert!(convert_to_symbol(&mut d, &scene(), 0, 0, &[0], &bad).is_err());
+    assert_eq!(d.scenes[0].layers[0].frames[0].elements.len(), 1, "the square is still on the stage");
+    assert!(d.library.find("g").is_none());
 }
